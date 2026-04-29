@@ -1,0 +1,15 @@
+{
+  "output_data": {
+    "vitality_score": 88,
+    "zone": "Bright Green",
+    "trend": "Stable",
+    "confidence": "High",
+    "top_drivers": [
+      "Vitals are stable and consistent",
+      "Excellent check-in consistency"
+    ],
+    "red_flag": false,
+    "recommended_next_step": "Keep up the great routine.",
+    "owner_summary": "Bonnie is doing wonderfully and tracking perfectly with her normal baseline."
+  }
+}

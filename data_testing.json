@@ -1,0 +1,47 @@
+{ 
+  "check_in_data": {
+    "pet_id": "pet_100495",
+    "timestamp": "2026-04-29T10:15:00Z",
+    
+    "vet_interaction": {
+      "visited_vet": false,
+      "reason_for_visit": null
+    },
+    
+    "energy": 8,
+    "appetite": 9,
+    "sleep_quality": 8,
+    "water_intake": "Normal",
+    "activity_minutes": 65,
+    
+    "diet_changed": false,
+    "social_behaviour": "Normal",
+    
+    "physical_health": {
+      "eyes": 10,
+      "ears": 9,
+      "coat": 9
+    },
+    
+    "toileting": {
+      "frequency_changes": "Normal",
+      "consistency_changes": "Normal",
+      "indoor_accidents": false,
+      "blood_present": false
+    },
+    
+    "tick_check_completed": true,
+    "skin_or_lump_issue_found": false,
+    "is_in_pain": false,
+    
+    "weight": 21.5,
+    "dental_log": {
+      "breath_odour": "Normal",
+      "chewing_changes": "Normal",
+      "gum_redness_bleeding": "Normal",
+      "professional_clean_due": false
+    },
+    
+    "owner_wellbeing_status": "Doing well"
+  }
+}
