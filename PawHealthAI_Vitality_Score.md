@@ -27,7 +27,7 @@ The Vitality Score runs on a carefully designed architecture to ensure it is bot
 ### Layer 1: The Wellness Trend Engine (The "Math")
 This layer tracks general, day-to-day wellness based on weekly check-ins.
 * **What it tracks:** It looks at factors like activity levels, energy, appetite, and sleep quality. 
-* **Smart Adjustments:** The engine is customized for the pet's breed and age [cite: 560]. For example, high-energy breeds like Vizslas will have their activity levels weighted much more heavily than a low-energy breed. 
+* **Smart Adjustments:** The engine is customized for the pet's breed and age. For example, high-energy breeds like Vizslas will have their activity levels weighted much more heavily than a low-energy breed. 
 * **Signal vs. Noise:** The system knows the difference between a minor fluctuation and a real health issue. A single week of slightly reduced appetite is considered "noise" and won't severely penalize the score. However, reduced appetite combined with lower energy and a behavioral change is a "signal" that triggers a larger score drop.
 
 ### Layer 2: The Red Flag Engine (The "Safety Net")
