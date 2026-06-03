@@ -37,9 +37,9 @@ class VitalityScoreEngine:
         avg_act = max(1, sum(h.activity_minutes for h in self.history) / 4.0)
 
         # Calculate Negative Deviations
-        drop_energy = max(0, avg_energy - current.energy)        # Energy
-        drop_appetite = max(0, avg_appetite - current.appetite)    # Appetite
-        drop_sleep = max(0, avg_sleep - current.sleep_quality)  # Sleep
+        drop_energy = max(0, avg_energy - current.energy)                 # Energy
+        drop_appetite = max(0, avg_appetite - current.appetite)           # Appetite
+        drop_sleep = max(0, avg_sleep - current.sleep_quality)            # Sleep
         drop_act = max(0, (avg_act - current.activity_minutes) / avg_act) # Activity minute
 
         # Weighting (Normal breed v.s High Energy breed)
@@ -108,7 +108,3 @@ class VitalityScoreEngine:
         if zone == "Bright Green":
             return "Your pet is doing wonderfully and tracking perfectly with their normal baseline."
         return f"Your pet seems a little below their usual pattern this week, mainly due to {drivers[0].lower()}."
-
-        
-        
-        

@@ -1,4 +1,18 @@
 { 
+  "pet_profile": {
+    "pet_id": "pet_100495",
+    "pet_name": "Bonnie",
+    "breed": "Vizsla",
+    "birth_date": "2023-04-12T00:00:00Z",
+    "is_high_energy": true,
+    "postcode": "4217",
+    "streak": 5,
+    "consistency": 0.95,
+    "worming_compliant": true,
+    "vaccination_current": true,
+    "days_since_last_vet_visit": 142
+  },
+  
   "check_in_data": {
     "pet_id": "pet_100495",
     "timestamp": "2026-04-29T10:15:00Z",
