@@ -1,0 +1,47 @@
+{ 
+  "pet_profile": {
+    "pet_id": "pet_100442",
+    "pet_name": "Bonnie",
+    "species": "dog",
+    "breed": "Vizsla",
+    "sex": "male",
+    "postcode": "4217",
+    "birth_date": "2023-04-12",
+    "is_high_energy": true,
+    "worming_compliant": true,
+    "vaccination_current": true
+  },
+  
+  "check_in_data": {
+    "pet_id": "pet_100442",
+    "timestamp": "2026-04-29T10:15:00Z",
+    
+    "vet_interaction": {
+      "visited_vet": false,
+      "reason_for_visit": null
+    },
+    
+    "appetite_scorew": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 65,
+    
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+    
+    "blood_in_stool": false,
+    "vomiting": false,
+    "dỉarhea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+    
+    "weight_kg": 25.0,
+    "owner_concern_level": 1
+  }
+}
