@@ -2,60 +2,41 @@
   "pet_profile": {
     "pet_id": "pet_100495",
     "pet_name": "Bonnie",
+    "species": "dog",
     "breed": "Vizsla",
-    "birth_date": "2023-04-12T00:00:00Z",
-    "is_high_energy": true,
+    "sex": "male",
     "postcode": "4217",
-    "streak": 5,
-    "consistency": 0.95,
+    "birth_date": "2023-04-12",
+    "is_high_energy": true,
     "worming_compliant": true,
-    "vaccination_current": true,
-    "days_since_last_vet_visit": 142
+    "vaccination_current": true
   },
   
   "check_in_data": {
     "pet_id": "pet_100495",
     "timestamp": "2026-04-29T10:15:00Z",
     
-    "vet_interaction": {
-      "visited_vet": false,
-      "reason_for_visit": null
-    },
-    
-    "energy": 8,
-    "appetite": 9,
-    "sleep_quality": 8,
-    "water_intake": "Normal",
+    "appetite_scorew": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
     "activity_minutes": 65,
     
-    "diet_changed": false,
-    "social_behaviour": "Normal",
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
     
-    "physical_health": {
-      "eyes": 10,
-      "ears": 9,
-      "coat": 9
-    },
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
     
-    "toileting": {
-      "frequency_changes": "Normal",
-      "consistency_changes": "Normal",
-      "indoor_accidents": false,
-      "blood_present": false
-    },
-    
-    "tick_check_completed": true,
-    "skin_or_lump_issue_found": false,
-    "is_in_pain": false,
-    
-    "weight": 21.5,
-    "dental_log": {
-      "breath_odour": "Normal",
-      "chewing_changes": "Normal",
-      "gum_redness_bleeding": "Normal",
-      "professional_clean_due": false
-    },
-    
-    "owner_wellbeing_status": "Doing well"
+    "weight_kg": 25.0,
+    "owner_concern_level": 1
   }
 }

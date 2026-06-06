@@ -1,37 +1,32 @@
 { 
   "pet_profile": {
-    "pet_id": "pet_100442",
-    "pet_name": "Bonnie",
-    "species": "dog",
-    "breed": "Vizsla",
+    "pet_id": "pet_100000",
+    "pet_name": "Minh",
+    "species": "cat",
+    "breed": "Scottish Fold",
     "sex": "male",
-    "postcode": "4217",
-    "birth_date": "2023-04-12",
-    "is_high_energy": true,
-    "worming_compliant": true,
+    "postcode": "3000",
+    "birth_date": "2023-06-12",
+    "is_high_energy": false,
+    "worming_compliant": false,
     "vaccination_current": true
   },
   
   "check_in_data": {
-    "pet_id": "pet_100442",
-    "timestamp": "2026-04-29T10:15:00Z",
+    "pet_id": "pet_100000",
+    "timestamp": "2026-04-21T10:15:00Z",
     
-    "vet_interaction": {
-      "visited_vet": false,
-      "reason_for_visit": null
-    },
+    "appetite_score": 3,
+    "energy_score": 3,
+    "sleep_quality_score": 3,
+    "activity_minutes": 40,
     
-    "appetite_scorew": 4,
-    "energy_score": 4,
-    "sleep_quality_score": 4,
-    "activity_minutes": 65,
-    
-    "toileting_status": "normal",
-    "water_intake_status": "normal",
+    "toileting_status": "more_frequent",
+    "water_intake_status": "decreased",
     
     "blood_in_stool": false,
     "vomiting": false,
-    "dỉarhea": false,
+    "diarhea": true,
     "collapse": false,
     "breathing_difficulty": false,
     "seizure": false,
@@ -41,7 +36,7 @@
     "tick_found": false,
     "pain_or_discomfort_signs": false,
     
-    "weight_kg": 25.0,
-    "owner_concern_level": 1
+    "weight_kg": 4.0,
+    "owner_concern_level": 2
   }
 }

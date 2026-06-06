@@ -1,0 +1,42 @@
+{ 
+  "pet_profile": {
+    "pet_id": "pet_100495",
+    "pet_name": "BingBong",
+    "species": "dog",
+    "breed": "Corgi",
+    "sex": "male",
+    "postcode": "3000",
+    "birth_date": "2024-06-02",
+    "is_high_energy": false,
+    "worming_compliant": true,
+    "vaccination_current": true
+  },
+  
+  "check_in_data": {
+    "pet_id": "pet_100495",
+    "timestamp": "2026-04-29T10:15:00Z",
+    
+    "appetite_score": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 65,
+    
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+    
+    "blood_in_stool": true,
+    "vomiting": false,
+    "diarrhea": true,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": true,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+    
+    "weight_kg": 13.0,
+    "owner_concern_level": 4
+  }
+}
