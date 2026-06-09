@@ -16,12 +16,12 @@
     "pet_id": "pet_100495",
     "timestamp": "2026-04-29T10:15:00Z",
     
-    "appetite_score": 4,
-    "energy_score": 4,
-    "sleep_quality_score": 4,
-    "activity_minutes": 65,
+    "appetite_score": 2,
+    "energy_score": 1,
+    "sleep_quality_score": 2,
+    "activity_minutes": 15,
     
-    "toileting_status": "normal",
+    "toileting_status": "less_frequent",
     "water_intake_status": "normal",
     
     "blood_in_stool": true,
