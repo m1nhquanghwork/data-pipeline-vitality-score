@@ -8,7 +8,7 @@
     "postcode": "3000",
     "birth_date": "2023-06-12",
     "is_high_energy": false,
-    "worming_compliant": false,
+    "worming_compliant": true,
     "vaccination_current": true
   },
   
@@ -18,15 +18,15 @@
     
     "appetite_score": 3,
     "energy_score": 3,
-    "sleep_quality_score": 3,
-    "activity_minutes": 40,
+    "sleep_quality_score": 2,
+    "activity_minutes": 25,
     
-    "toileting_status": "more_frequent",
-    "water_intake_status": "decreased",
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
     
     "blood_in_stool": false,
     "vomiting": false,
-    "diarhea": true,
+    "diarrhea": false,
     "collapse": false,
     "breathing_difficulty": false,
     "seizure": false,

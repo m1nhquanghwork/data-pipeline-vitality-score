@@ -1,6 +1,6 @@
 { 
   "pet_profile": {
-    "pet_id": "pet_100495",
+    "pet_id": "pet_100004",
     "pet_name": "BingBong",
     "species": "dog",
     "breed": "Corgi",
@@ -13,7 +13,7 @@
   },
   
   "check_in_data": {
-    "pet_id": "pet_100495",
+    "pet_id": "pet_100004",
     "timestamp": "2026-04-29T10:15:00Z",
     
     "appetite_score": 2,

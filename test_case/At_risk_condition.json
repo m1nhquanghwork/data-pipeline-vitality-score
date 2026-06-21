@@ -1,0 +1,42 @@
+{ 
+  "pet_profile": {
+    "pet_id": "pet_100002",
+    "pet_name": "Penny",
+    "species": "dog",
+    "breed": "Vizsla",
+    "sex": "female",
+    "postcode": "3000",
+    "birth_date": "2023-04-12",
+    "is_high_energy": false,
+    "worming_compliant": true,
+    "vaccination_current": true
+  },
+  
+  "check_in_data": {
+    "pet_id": "pet_100002",
+    "timestamp": "2026-04-29T10:15:00Z",
+    
+    "appetite_scorew": 1,
+    "energy_score": 2,
+    "sleep_quality_score": 1,
+    "activity_minutes": 10,
+    
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+    
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+    
+    "weight_kg": 25.0,
+    "owner_concern_level": 1
+  }
+}

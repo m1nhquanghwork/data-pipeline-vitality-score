@@ -1,6 +1,6 @@
 { 
   "pet_profile": {
-    "pet_id": "pet_100495",
+    "pet_id": "pet_100001",
     "pet_name": "Bonnie",
     "species": "dog",
     "breed": "Vizsla",
@@ -13,10 +13,10 @@
   },
   
   "check_in_data": {
-    "pet_id": "pet_100495",
+    "pet_id": "pet_100001",
     "timestamp": "2026-04-29T10:15:00Z",
     
-    "appetite_scorew": 4,
+    "appetite_scorew": 3,
     "energy_score": 4,
     "sleep_quality_score": 4,
     "activity_minutes": 65,
