@@ -1,0 +1,104 @@
+from dataclasses import dataclass, field
+
+@dataclass
+class PetProfile:
+    """Static information about a pet. Drives breed-aware weighting only."""
+    pet_id: str
+    name: str
+    species: str                      # "dog" | "cat"
+    breed: str
+    sex: str                       #  "male" | "female"
+    post_code: int
+    birth_date: date
+    is_high_energy: bool      # e.g. Vizsla, Border Collie -> activity weighted higher
+    worming_compliant: bool    # provisional, non-clinical care-compliance nudge
+    vaccination_current: bool
+
+@dataclass
+class CheckInData:
+    """
+    A single weekly check-in payload.
+
+    Wellbeing scores use a 1-5 scale (1 = very poor, 5 = excellent).
+    Acute signals are booleans and feed ONLY the red-flag override layer.
+    """
+    pet_id: str
+    timestamp: datetime
+
+    # --- Core wellbeing vitals (1-5) ---
+    appetite_score: int
+    energy_score: int
+    sleep_quality_score: int
+    activity_minutes: int                 # raw activity, compared against baseline
+
+    # --- Toileting / hydration context ---
+    toileting_status: str = "normal"      # "normal" | "more_frequent" | "less_frequent"
+    water_intake_status: str = "normal"   # "normal" | "increased" | "decreased"
+
+    # --- Acute / red-flag signals (booleans) ---
+    blood_in_stool: bool = False
+    vomiting: bool = False
+    diarrhoea: bool = False
+    breathing_difficulty: bool = False
+    collapse: bool = False
+    seizure: bool = False
+    suspected_toxin_ingestion: bool = False
+    unable_to_urinate: bool = False
+    severe_bleeding: bool = False
+    tick_found: bool = False
+    pain_or_discomfort_signs: bool = False
+
+    # --- Optional context (NOT direct health-score drivers) ---
+    weight_kg: Optional[float] = None   # weight changes ratical maybe a signal
+    owner_concern_level: Optional[int] = None   # 1-5 owner subjective worry, advisory only
+
+@dataclass
+class BaselineSummary:
+    """The pet's own recent normal, computed from history. Section 4.3."""
+    n_checkins: int
+    has_baseline: bool
+    avg_appetite: Optional[float] = None
+    avg_energy: Optional[float] = None
+    avg_sleep: Optional[float] = None
+    avg_activity: Optional[float] = None
+
+    @classmethod
+    def from_history(cls, history: List[CheckInData], min_checkins: int = 4) -> "BaselineSummary":
+        n = len(history)
+        if n == 0:
+            return cls(n_checkins=0, has_baseline=False)
+        return cls(
+            n_checkins=n,
+            has_baseline=n >= min_checkins,
+            avg_appetite=statistics.mean(h.appetite_score for h in history),
+            avg_energy=statistics.mean(h.energy_score for h in history),
+            avg_sleep=statistics.mean(h.sleep_quality_score for h in history),
+            avg_activity=statistics.mean(h.activity_minutes for h in history),
+        )
+
+
+@dataclass
+class RedFlagResult:
+    """
+    Output of the safety override layer. Replaces the old, unsafe
+    `potential_diseases` field with safe, internal-only escalation fields. Section 4.5.
+    """
+    triggered: bool
+    trigger: Optional[str] = None                      # short machine label, e.g. "collapse"
+    severity_tier: Optional[str] = None                # "emergency" | "urgent" | "monitor"
+    clinical_reason_for_escalation: Optional[str] = None
+    recommended_user_pathway: Optional[str] = None
+    vet_validation_required: bool = False
+
+@dataclass
+class VitalityScoreResult:
+    """Unified, product-facing result. Never conta ins a disease name."""
+    pet_id: str
+    score: Optional[int]               # 0-100, or None while building baseline / on override
+    band: str                          # Bright Green | Medium Green | Watch | Action Needed | Building Baseline
+    baseline_status: str               # "established" | "building" | "override"
+    confidence: str                    # "high" | "moderate" | "low"
+    override: Optional[RedFlagResult]  # populated whenever a red flag fired
+    drivers: List[str] = field(default_factory=list)
+    explanation: str = ""              # plain-English, safe, non-diagnostic
+    trend: str = "n/a"
