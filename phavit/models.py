@@ -1,18 +1,30 @@
+"""
+Typed data models for the PHAIVIT scoring engine.
+
+These are plain dataclasses so the engine can be imported, tested and called
+from check-in completion flows without any notebook or framework dependency.
+"""
+
 from dataclasses import dataclass, field
+from datetime import datetime, date
+from typing import List, Optional
+import statistics
+
 
 @dataclass
 class PetProfile:
     """Static information about a pet. Drives breed-aware weighting only."""
     pet_id: str
     name: str
-    species: str                      # "dog" | "cat"
+    species: str                   # "dog" | "cat"
     breed: str
-    sex: str                       #  "male" | "female"
+    sex: str                       # "male" | "female"
     post_code: int
     birth_date: date
-    is_high_energy: bool      # e.g. Vizsla, Border Collie -> activity weighted higher
-    worming_compliant: bool    # provisional, non-clinical care-compliance nudge
+    is_high_energy: bool           # e.g. Vizsla, Border Collie -> activity weighted higher
+    worming_compliant: bool        # provisional, non-clinical care-compliance nudge
     vaccination_current: bool
+
 
 @dataclass
 class CheckInData:
@@ -49,8 +61,9 @@ class CheckInData:
     pain_or_discomfort_signs: bool = False
 
     # --- Optional context (NOT direct health-score drivers) ---
-    weight_kg: Optional[float] = None   # weight changes ratical maybe a signal
-    owner_concern_level: Optional[int] = None   # 1-5 owner subjective worry, advisory only
+    weight_kg: Optional[float] = None            # weight changes may later be a signal
+    owner_concern_level: Optional[int] = None    # 1-5 owner subjective worry, advisory only
+
 
 @dataclass
 class BaselineSummary:
@@ -63,7 +76,7 @@ class BaselineSummary:
     avg_activity: Optional[float] = None
 
     @classmethod
-    def from_history(cls, history: List[CheckInData], min_checkins: int = 4) -> "BaselineSummary":
+    def from_history(cls, history: List["CheckInData"], min_checkins: int = 4) -> "BaselineSummary":
         n = len(history)
         if n == 0:
             return cls(n_checkins=0, has_baseline=False)
@@ -90,9 +103,10 @@ class RedFlagResult:
     recommended_user_pathway: Optional[str] = None
     vet_validation_required: bool = False
 
+
 @dataclass
 class VitalityScoreResult:
-    """Unified, product-facing result. Never conta ins a disease name."""
+    """Unified, product-facing result. Never contains a disease name."""
     pet_id: str
     score: Optional[int]               # 0-100, or None while building baseline / on override
     band: str                          # Bright Green | Medium Green | Watch | Action Needed | Building Baseline
