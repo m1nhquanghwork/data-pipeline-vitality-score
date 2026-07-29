@@ -54,6 +54,25 @@ check-in ─▶ Layer 2: RedFlagEngine (safety net, runs FIRST)
 - **Honest uncertainty**: with fewer than 4 recent check-ins the engine returns a
   `Building Baseline` state with low confidence rather than a fabricated score.
 
+**The equation.** With baseline means $\bar A,\bar E,\bar S,\bar M$ (appetite, energy,
+sleep, activity) over the last $n \ge 4$ check-ins, take **downward deviations only**:
+
+$$\Delta a=\max(0,\bar A-a),\quad \Delta e=\max(0,\bar E-e),\quad \Delta s=\max(0,\bar S-s),\quad \Delta m=\max\!\Big(0,\tfrac{\bar M-m}{\bar M}\Big)$$
+
+($\Delta a,\Delta e,\Delta s$ are 1–5 point drops; $\Delta m$ is a fraction in $[0,1]$.)
+Apply breed-aware weights (each set sums to 1) and the tuning constant $D = 60$:
+
+$$(w_a,w_e,w_s,w_m)=\begin{cases}(0.30,0.30,0.20,0.20)&\text{normal breed}\\(0.20,0.25,0.10,0.45)&\text{high-energy breed}\end{cases}$$
+
+$$S_1 = 100 - D\,\big(w_a\Delta a + w_e\Delta e + w_s\Delta s + w_m\Delta m\big)$$
+
+Add the multi-decline penalty, where $k$ counts indicators that dropped meaningfully
+($\Delta a\ge1,\ \Delta e\ge1,\ \Delta s\ge1,\ \Delta m\ge0.25$), then the care nudge:
+
+$$S_2 = S_1 - 12\cdot\mathbb{1}[k\ge2], \qquad S_3 = S_2 - 8\cdot\mathbb{1}[\text{not worming\_compliant}]$$
+
+$$\text{score} = \max\!\big(0,\ \min(100,\ \operatorname{round}(S_3))\big)$$
+
 Bands (provisional): Bright Green ≥85 · Medium Green ≥70 · Watch ≥50 · Action Needed <50.
 
 ### Layer 2 - Red-flag override (three tiers)
