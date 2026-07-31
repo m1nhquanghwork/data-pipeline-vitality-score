@@ -1,26 +1,4 @@
-"""
-Layer 2 - the red-flag safety net.
-
-Acute or serious signs are handled here, separately from the 0-100 math, so a
-serious sign can never be averaged away by otherwise good vitals.
-"""
-
-from typing import List, Optional
-
-from .models import CheckInData, RedFlagResult
-
-
-# Emergency signs: any one of these hides the reassuring score and routes the
-# owner to emergency care. Field name on CheckInData -> safe escalation reason.
-EMERGENCY_SIGNS = {
-    "collapse": "Collapse or loss of consciousness reported",
-    "breathing_difficulty": "Difficulty breathing reported",
-    "seizure": "Seizure activity reported",
-    "severe_bleeding": "Severe or uncontrolled bleeding reported",
-    "suspected_toxin_ingestion": "Suspected ingestion of a toxic substance",
-    "unable_to_urinate": "Inability to urinate reported",
-}
-
+from models import RedFlagResult
 
 class RedFlagEngine:
     """
@@ -55,7 +33,6 @@ class RedFlagEngine:
 
         low_energy = current.energy_score <= 2
 
-        # ---------- TIER 2: URGENT ----------
         # Blood in stool, especially alongside lethargy.
         if current.blood_in_stool:
             reason = "Blood in stool reported"
@@ -105,8 +82,7 @@ class RedFlagEngine:
                 "Reported signs of pain may need veterinary review.",
                 True,
             )
-
-        # ---------- TIER 3: MONITOR ----------
+        
         if current.tick_found:
             return RedFlagResult(
                 True, "tick_found", "monitor",
