@@ -1,4 +1,4 @@
-# PawHealthAI - Vitality Score Engine v0.2
+reada# PawHealthAI - Vitality Score Engine v0.2
 
 **Technical report for veterinary and engineering review**
 Status: *Provisional - not clinically validated*

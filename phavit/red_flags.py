@@ -1,4 +1,19 @@
-from models import RedFlagResult
+from typing import List, Optional
+
+from .models import CheckInData, RedFlagResult
+
+
+# Emergency signs: any one hides the reassuring score and routes to emergency
+# care. Field name on CheckInData -> safe, non-diagnostic escalation reason.
+EMERGENCY_SIGNS = {
+    "collapse": "Collapse or loss of consciousness reported",
+    "breathing_difficulty": "Difficulty breathing reported",
+    "seizure": "Seizure activity reported",
+    "severe_bleeding": "Severe or uncontrolled bleeding reported",
+    "suspected_toxin_ingestion": "Suspected ingestion of a toxic substance",
+    "unable_to_urinate": "Inability to urinate reported",
+}
+
 
 class RedFlagEngine:
     """
