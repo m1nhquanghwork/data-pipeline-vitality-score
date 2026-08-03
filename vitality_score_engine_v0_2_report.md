@@ -20,14 +20,26 @@ their pet is healthy or sick.
 
 | File | Description |
 |------|-------------|
-| `data_pipeline_vitality_score.ipynb` | Runnable test-harness notebook (top-to-bottom, no manual fixes). |
-| `vitality_score_engine_v0_2.py` | Reusable, standard-library-only scoring engine. |
-| `synthetic_checkins_v0_2.csv` | 63 synthetic check-ins across 11 scenarios. |
-| `expected_outputs_v0_2.csv` | Scenario-level expected band, override and explanation style. |
-| `actual_outputs_v0_2.csv` | Engine output per scenario (regenerated each run). |
-| `vitality_score_engine_v0_2_report.md` | This report. |
+| `phavit/` | Importable engine package: `models`, `red_flags`, `scoring`, `pipeline`, `__init__` (see §3). |
+| `test_case/test_phavit.py` | Product-state & safety test suite (pytest or standalone). |
+| `test_case/*.json` | Five check-in fixtures: `At_good_condition`, `At_risk_condition`, `Digestion_problem`, `Less_good_condition`, `Not_enough_data`. |
+| `conftest.py` | Puts the repo root on `sys.path` so the tests resolve `phavit` under pytest. |
+| `data_pipeline_vitality_score_v2.ipynb` | Runnable notebook: engine walkthrough plus the fixture loader. |
+| `PawHealthAI_Vitality_Score.md` | Product-level overview of the Vitality Score. |
+| `vitality_score_engine_v0_2_report.md` / `.docx` | This report (Markdown source and exported Word copy). |
+
+*Legacy prototypes `vitality_score_engine.py` and `red_engine.py` predate v0.2 and are
+superseded by the `phavit/` package; they remain in the repo for reference only.*
 
 ## 3. Architecture
+
+The engine now ships as an importable package rather than notebook-only code, so it
+can be called from the weekly check-in flow, unit-tested and later persisted:
+
+- `phavit/models.py` - typed dataclasses (`PetProfile`, `CheckInData`, `BaselineSummary`, `RedFlagResult`, `VitalityScoreResult`).
+- `phavit/red_flags.py` - Layer 2 safety net (`RedFlagEngine`, `EMERGENCY_SIGNS`).
+- `phavit/scoring.py` - Layer 1 wellbeing math (`VitalityScoreEngine`).
+- `phavit/pipeline.py` - orchestration entry point (`process_checkin`).
 
 The engine runs in two clearly separated layers, orchestrated by `process_checkin()`:
 
@@ -53,6 +65,10 @@ check-in ─▶ Layer 2: RedFlagEngine (safety net, runs FIRST)
   declining together** add an extra penalty.
 - **Honest uncertainty**: with fewer than 4 recent check-ins the engine returns a
   `Building Baseline` state with low confidence rather than a fabricated score.
+- **Fourth-check-in unlock**: the total counts the *current* completed check-in, so
+  the first score appears at 4 total (3 previous + current), not the 5th event.
+  `process_checkin(pet, previous_checkins, current_checkin)` takes the two apart to
+  keep that boundary unambiguous.
 
 **The equation.** With baseline means $\bar A,\bar E,\bar S,\bar M$ (appetite, energy,
 sleep, activity) over the last $n \ge 4$ check-ins, take **downward deviations only**:
@@ -107,12 +123,33 @@ Every output includes a plain-English, non-diagnostic explanation, e.g.:
 
 ## 5. Test harness & results
 
-11 named scenarios (stable adult dog, high-energy reduced activity, senior gradual
-decline, puppy variable sleep/activity, cat appetite drop, blood in stool, repeated
-increased thirst, persistent low appetite + lethargy, emergency collapse, inconsistent
-low-confidence history, single vomiting). For each, expected band and override tier are
-declared **before** running the engine. Current result: **11/11 scenarios match
-expectation.**
+**Scenario harness (notebook).** 11 named scenarios (stable adult dog, high-energy
+reduced activity, senior gradual decline, puppy variable sleep/activity, cat appetite
+drop, blood in stool, repeated increased thirst, persistent low appetite + lethargy,
+emergency collapse, inconsistent low-confidence history, single vomiting). For each,
+expected band and override tier are declared **before** running the engine. Current
+result: **11/11 scenarios match expectation.**
+
+**Product-state suite (`test_case/test_phavit.py`).** A pytest suite that asserts the
+eight product states from the actionable plan, so regressions fail loudly. It runs
+under pytest (`python -m pytest test_case/test_phavit.py`) or standalone
+(`python test_case/test_phavit.py`, no pytest required). Current result: **11/11 pass.**
+Coverage:
+
+| # | State asserted |
+|---|----------------|
+| 1 | Building Baseline while fewer than four total check-ins |
+| 2 | First score unlocks on the fourth check-in (and not the third) |
+| 3 | Stable check-in scores Bright/Medium Green |
+| 4 | Multiple declining indicators drop the band to Watch/Action Needed |
+| 5 | Emergency sign (collapse, suspected toxin) suppresses the score |
+| 6 | Urgent sign (blood in stool + low energy) suppresses the score |
+| 7 | Monitor sign (single vomiting) keeps the score and attaches an advisory |
+| 8 | High-energy breed weighting amplifies an activity drop |
+
+Two further guards run alongside: missing optional fields fall back safely, the
+typo-tolerant loaders read the real fixtures, and **no disease name** appears in any
+user-facing explanation across every scenario and fixture.
 
 ## 6. Assumptions
 
@@ -133,12 +170,76 @@ expectation.**
 
 ## 8. Open questions for veterinary review
 
+### 8.1 General
+
 1. Are the three escalation tiers and their trigger lists clinically appropriate and complete?
 2. Is "≥4 check-ins" a sensible minimum baseline, or should it vary by life stage?
-3. Are the band cut-offs (85/70/50) and breed weightings reasonable starting points?
+3. Are the band cut-offs (85/70/50) reasonable starting points?
 4. Should any "monitor" item (e.g. tick found, single vomiting) be escalated to urgent?
 5. Is the look-back window for "repeated" signs (thirst, vomiting, appetite loss) right?
 6. Is the non-diagnostic explanation wording safe and clear enough for owners?
+
+### 8.2 The weighting mechanic (focus of this review)
+
+The score starts at 100 and only ever subtracts for **downward** deviations from the
+pet's own baseline. Two things decide how much a given change costs: the **weight** of
+that indicator (its relative importance) and the shared **deviation constant** `D = 60`
+(how many points a full deviation can remove). The weights within each breed profile
+sum to 1.0, so the profiles are directly comparable.
+
+**Current weights (provisional placeholders):**
+
+| Indicator | Normal breed | High-energy breed |
+|-----------|:------------:|:-----------------:|
+| Appetite  | 0.30 | 0.20 |
+| Energy    | 0.30 | 0.25 |
+| Sleep     | 0.20 | 0.10 |
+| Activity  | 0.20 | 0.45 |
+
+Because the abstract weights are hard to judge clinically, here is what they mean in
+**practice** — points removed from the 0-100 score, so the relative severity is visible
+without doing the maths. Appetite/energy/sleep are 1-5 scales; activity is compared as a
+percentage of the baseline minutes.
+
+| Change | Normal breed | High-energy breed |
+|--------|:------------:|:-----------------:|
+| Appetite down 1 point (e.g. 4→3) | −18 | −12 |
+| Energy down 1 point | −18 | −15 |
+| Sleep quality down 1 point | −12 | −6 |
+| Activity down 50% vs baseline | −6 | −13.5 |
+| Activity down 100% vs baseline | −12 | −27 |
+| **Two or more indicators down together** | −12 flat | −12 flat |
+| Worming treatment overdue | −8 | −8 |
+
+So, for a normal-breed pet, a single one-point appetite dip lands the score at 82
+(Medium Green); appetite **and** energy both dropping a point lands it at 100−18−18−12 =
+52 (bottom of Watch). For a high-energy breed the same two-point wellbeing drop is
+softened, but a halving of activity is penalised far more heavily.
+
+**Questions for the reviewing vet:**
+
+1. **Relative ordering.** For a typical adult dog, is *appetite ≈ energy > sleep ≈
+   activity* the right priority? Should appetite outrank energy (or vice-versa) rather
+   than being equal?
+2. **Breed-aware activity.** Is weighting activity 0.45 (vs 0.20) for high-energy breeds
+   clinically justified, and *which* breeds should qualify? Should this be driven by
+   breed, by life stage, or by an owner-declared activity norm instead of a single flag?
+3. **Magnitude / `D = 60`.** A one-point appetite drop removing ~18 of 100 points — is
+   that clinically proportionate, too harsh, or too soft? Where should a *single*
+   indicator drop leave a pet: Medium Green or Watch?
+4. **Signal vs noise.** Is a flat −12 when ≥2 indicators fall together the right way to
+   model a genuine "signal," and is 2 the correct trigger count? Should some pairings
+   (appetite + energy) weigh more than others (sleep + activity)?
+5. **Species profile.** Cats currently use the normal-breed profile. Should cats have
+   their own weighting (sleep is naturally high and variable, activity is harder for
+   owners to observe)?
+6. **Life stage.** Should puppies (variable sleep) and seniors (expected gradual activity
+   decline) use different weights rather than the two breed profiles alone?
+7. **Sensitivity thresholds.** A change only counts as a "drop" at ≥1 point (1-5 scale)
+   or ≥25% for activity. Are those the right thresholds, or should smaller changes count?
+8. **Care-compliance nudge.** Folding an overdue-worming penalty (−8) into a *wellbeing*
+   score — is that appropriate, or should care compliance be surfaced separately and kept
+   out of the health trend entirely?
 
 ## 9. Out of scope
 
