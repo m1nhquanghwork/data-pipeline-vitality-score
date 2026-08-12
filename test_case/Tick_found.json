@@ -1,0 +1,46 @@
+{
+  "scenario": "A tick was found. Monitor tier: the owner gets safe removal advice and the wellbeing score is still shown, because this is not a reason to hide it.",
+  "pet_profile": {
+    "pet_id": "pet_300009",
+    "pet_name": "Juno",
+    "species": "dog",
+    "breed": "Labrador",
+    "sex": "female",
+    "postcode": "3000",
+    "birth_date": "2020-03-15",
+    "is_high_energy": false,
+    "worming_compliant": true,
+    "vaccination_current": true,
+    "weight_management_plan": false
+  },
+  "check_in_data": {
+    "pet_id": "pet_300009",
+    "timestamp": "2026-07-21T09:00:00Z",
+    "appetite_score": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 60,
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhoea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": true,
+    "pain_or_discomfort_signs": false,
+    "weight_kg": 30.0,
+    "owner_concern_level": 2
+  },
+  "expected": {
+    "band": "Bright Green",
+    "score_present": true,
+    "score": 100,
+    "override_tier": "monitor",
+    "override_trigger": "tick_found"
+  }
+}

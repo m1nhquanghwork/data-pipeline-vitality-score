@@ -6,9 +6,17 @@ using fixed deductions. Pure wellbeing math: acute red flags are handled
 separately by RedFlagEngine (red_flags.py) and must not be folded in here.
 """
 
-from typing import List
+from dataclasses import dataclass, replace
+from typing import List, Optional
 
-from .models import BaselineSummary, CheckInData, PetProfile, VitalityScoreResult
+from .models import (
+    BaselineSummary,
+    CheckInData,
+    PetProfile,
+    VitalityScoreResult,
+    WeightTrendResult,
+)
+from .weight import is_declining_indicator, weight_penalty
 
 
 BAND_BRIGHT = 85
@@ -17,6 +25,61 @@ BAND_WATCH = 50
 
 # How many score points a full deviation can remove (tuning constant, provisional).
 DEVIATION_WEIGHT = 60
+
+# Fraction of baseline activity that must be lost before it counts as a drop.
+# Tightened for pets carrying weight above their breed reference, for whom
+# sustained low activity matters more.
+ACTIVITY_DROP_THRESHOLD = 0.25
+ACTIVITY_DROP_THRESHOLD_HEAVY = 0.20
+
+# Placeholder driver used when nothing moved the score. Kept as a constant so
+# the explanation layer can tell "nothing to report" from a real driver.
+NO_DRIVERS = "all tracked indicators in line with usual baseline"
+
+# Extra activity weight for a pet above / well above their breed reference.
+# Applied then renormalised - see Weights.normalised().
+BODY_STATUS_ACTIVITY_BUMP = {
+    "above_reference": 0.05,
+    "well_above_reference": 0.10,
+}
+
+
+@dataclass(frozen=True)
+class Weights:
+    """
+    One breed-aware weighting profile. The four indicator weights always sum to
+    1.0 so profiles stay directly comparable (report section 8.2).
+    """
+    appetite: float
+    energy: float
+    sleep: float
+    activity: float
+    activity_drop_threshold: float = ACTIVITY_DROP_THRESHOLD
+
+    def normalised(self) -> "Weights":
+        """
+        Rescale the four indicator weights back to a sum of 1.0.
+
+        This is load-bearing. Bumping activity without renormalising raises the
+        total above 1.0, which makes the score uniformly harsher rather than
+        simply re-prioritising activity - a different, and worse, behaviour.
+        """
+        total = self.appetite + self.energy + self.sleep + self.activity
+        if total <= 0:
+            return self
+        return replace(
+            self,
+            appetite=self.appetite / total,
+            energy=self.energy / total,
+            sleep=self.sleep / total,
+            activity=self.activity / total,
+        )
+
+
+BASE_PROFILES = {
+    "high_energy": Weights(0.20, 0.25, 0.10, 0.45),
+    "standard": Weights(0.30, 0.30, 0.20, 0.20),
+}
 
 
 class VitalityScoreEngine:
@@ -31,9 +94,39 @@ class VitalityScoreEngine:
     # This total counts the current check-in, i.e. 3 previous + current = 4.
     MIN_CHECKINS_FOR_SCORE = 4
 
-    def __init__(self, pet: PetProfile, history: List[CheckInData]):
+    def __init__(
+        self,
+        pet: PetProfile,
+        history: List[CheckInData],
+        weight_trend: Optional[WeightTrendResult] = None,
+    ):
         self.pet = pet
         self.history = history          # PREVIOUS check-ins only (excludes current)
+        # Latest stored monthly weight signal. None -> the engine behaves
+        # exactly as it did before weight existed.
+        self.weight_trend = weight_trend
+
+    def _select_weights(self) -> Weights:
+        """
+        Pick the weighting profile for this pet.
+
+        Breed energy level chooses the base profile; body weight relative to the
+        breed reference then shifts emphasis towards activity, because for a pet
+        carrying extra weight sustained low activity is both more consequential
+        and the lever an owner can actually pull.
+        """
+        profile = BASE_PROFILES["high_energy" if self.pet.is_high_energy else "standard"]
+
+        body_status = self.weight_trend.body_status if self.weight_trend else None
+        bump = BODY_STATUS_ACTIVITY_BUMP.get(body_status, 0.0)
+        if not bump:
+            return profile
+
+        return replace(
+            profile,
+            activity=profile.activity + bump,
+            activity_drop_threshold=ACTIVITY_DROP_THRESHOLD_HEAVY,
+        ).normalised()
 
     def calculate(self, current: CheckInData) -> VitalityScoreResult:
         # Unlock boundary (WS2): the current completed check-in is part of the
@@ -72,19 +165,25 @@ class VitalityScoreEngine:
                 0.0, (baseline.avg_activity - current.activity_minutes) / baseline.avg_activity
             )
 
-        # Breed-aware weights (each set sums to 1.0). High-energy breeds weight activity.
-        if self.pet.is_high_energy:
-            w_app, w_energy, w_sleep, w_act = 0.20, 0.25, 0.10, 0.45
-        else:
-            w_app, w_energy, w_sleep, w_act = 0.30, 0.30, 0.20, 0.20
+        # Breed-aware weights (each set sums to 1.0), shifted towards activity when
+        # the pet is above their breed weight reference.
+        w = self._select_weights()
 
         score = 100.0
         drivers: List[str] = []
 
-        score -= drop_appetite * w_app * DEVIATION_WEIGHT
-        score -= drop_energy * w_energy * DEVIATION_WEIGHT
-        score -= drop_sleep * w_sleep * DEVIATION_WEIGHT
-        score -= drop_activity_frac * w_act * DEVIATION_WEIGHT
+        score -= drop_appetite * w.appetite * DEVIATION_WEIGHT
+        score -= drop_energy * w.energy * DEVIATION_WEIGHT
+        score -= drop_sleep * w.sleep * DEVIATION_WEIGHT
+        score -= drop_activity_frac * w.activity * DEVIATION_WEIGHT
+
+        activity_dropped = drop_activity_frac >= w.activity_drop_threshold
+
+        # Weight loss from the monthly weight subsystem. Carried forward between
+        # weigh-ins and decayed once stale, so the score stays steady rather than
+        # spiking on whichever week the weight happened to be logged.
+        w_penalty = weight_penalty(self.weight_trend, current.timestamp)
+        score -= w_penalty
 
         if drop_appetite >= 1:
             drivers.append("appetite below usual")
@@ -92,8 +191,10 @@ class VitalityScoreEngine:
             drivers.append("energy below usual")
         if drop_sleep >= 1:
             drivers.append("sleep quality below usual")
-        if drop_activity_frac >= 0.25:
+        if activity_dropped:
             drivers.append("activity below usual")
+        if w_penalty > 0:
+            drivers.append("weight below usual")
 
         # Signal vs noise: multiple indicators declining together is more concerning
         # than a single one-day dip (section 4.3 - "multiple indicators declining together").
@@ -101,7 +202,8 @@ class VitalityScoreEngine:
             drop_appetite >= 1,
             drop_energy >= 1,
             drop_sleep >= 1,
-            drop_activity_frac >= 0.25,
+            activity_dropped,
+            is_declining_indicator(self.weight_trend, current.timestamp),
         ])
         if declining >= 2:
             score -= 12.0
@@ -116,7 +218,7 @@ class VitalityScoreEngine:
         band = self._band(final)
         confidence = "high" if total_checkins >= 6 else "moderate"
         if not drivers:
-            drivers = ["all tracked indicators in line with usual baseline"]
+            drivers = [NO_DRIVERS]
         trend = "stable" if final >= BAND_MEDIUM else "declining vs baseline"
 
         return VitalityScoreResult(
@@ -127,7 +229,7 @@ class VitalityScoreEngine:
             confidence=confidence,
             override=None,
             drivers=drivers,
-            explanation=self._explain(band, drivers),
+            explanation=self._explain(band, drivers, weight_contributed=w_penalty > 0),
             trend=trend,
         )
 
@@ -141,16 +243,41 @@ class VitalityScoreEngine:
             return "Watch"
         return "Action Needed"
 
-    def _explain(self, band: str, drivers: List[str]) -> str:
+    def _weight_note(self) -> str:
+        """
+        Weight is recorded monthly, so any mention of it must carry the date of
+        the reading. Never let the copy imply it was measured this week.
+        """
+        trend = self.weight_trend
+        if trend is None or trend.as_of is None:
+            return ""
+        return (
+            f" The weight comparison uses the reading recorded on "
+            f"{trend.as_of.strftime('%d %b %Y')}."
+        )
+
+    def _explain(self, band: str, drivers: List[str], weight_contributed: bool = False) -> str:
         name = self.pet.name
+        note = self._weight_note() if weight_contributed else ""
+        real_drivers = [d for d in drivers if d != NO_DRIVERS]
+
         if band in ("Bright Green", "Medium Green"):
+            # A green band can still carry a driver (a weight drop, an overdue
+            # worming nudge). Reassuring copy must not contradict it.
+            if real_drivers:
+                driver_text = ", ".join(real_drivers[:2])
+                return (
+                    f"{name} is still tracking well overall this week, though {driver_text} "
+                    f"compared with their usual baseline. No emergency red flags were "
+                    f"reported. Keep an eye on it and keep up the regular check-ins.{note}"
+                )
             return (
                 f"{name}'s indicators are tracking in line with their usual baseline this week. "
-                f"No emergency red flags were reported. Keep up the regular check-ins."
+                f"No emergency red flags were reported. Keep up the regular check-ins.{note}"
             )
         driver_text = ", ".join(drivers[:2]) if drivers else "small changes from baseline"
         return (
             f"{name}'s score is lower this week mainly because {driver_text} compared with their "
             f"usual baseline. This is a wellbeing trend, not a diagnosis. If it continues or "
-            f"worsens, veterinary advice should be considered."
+            f"worsens, veterinary advice should be considered.{note}"
         )

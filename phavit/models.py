@@ -25,6 +25,11 @@ class PetProfile:
     worming_compliant: bool        # provisional, non-clinical care-compliance nudge
     vaccination_current: bool
 
+    # Owner has recorded a deliberate weight-management plan. Suppresses the
+    # weight-loss escalation while the loss stays within a safe rate, so owners
+    # doing the right thing are not alarmed for succeeding.
+    weight_management_plan: bool = False
+
 
 @dataclass
 class CheckInData:
@@ -91,6 +96,42 @@ class BaselineSummary:
 
 
 @dataclass
+class WeightReading:
+    """
+    A single recorded body weight. Weight is logged MONTHLY, on its own cadence,
+    not once per weekly check-in - so it is kept apart from CheckInData.
+    """
+    kg: float
+    at: date
+
+
+@dataclass
+class WeightTrendResult:
+    """
+    Output of the weight subsystem (weight.py). Computed when a new weight is
+    recorded, stored, then read by the weekly pipeline - it is never recomputed
+    from scratch inside a check-in.
+
+    `rate_per_4w` is the headline number: percent body weight LOST per 4 weeks
+    (negative means gain). Normalising to a 4-week rate makes readings taken at
+    irregular intervals comparable.
+    """
+    status: str                        # "ok" | "insufficient" | "implausible"
+    direction: str = "unknown"         # "loss" | "gain" | "stable" | "unknown"
+    pct_change: float = 0.0            # % change over the window (positive = loss)
+    rate_per_4w: float = 0.0           # % per 4 weeks (positive = loss)
+    baseline_kg: Optional[float] = None
+    current_kg: Optional[float] = None
+    as_of: Optional[date] = None       # date of the LATEST valid reading
+    weeks_span: float = 0.0
+    body_status: str = "no_reference"  # vs breed reference; see weight.body_status()
+    is_growing: bool = False           # under the breed's adult age - growth expected
+    managed: bool = False              # loss is within a recorded weight plan
+    tier: Optional[str] = None         # "urgent" | "monitor" | None (trend-only rules)
+    notes: List[str] = field(default_factory=list)
+
+
+@dataclass
 class RedFlagResult:
     """
     Output of the safety override layer. Replaces the old, unsafe
@@ -116,3 +157,6 @@ class VitalityScoreResult:
     drivers: List[str] = field(default_factory=list)
     explanation: str = ""              # plain-English, safe, non-diagnostic
     trend: str = "n/a"
+    # Latest weight signal, carried through for Pawport display and the WS9
+    # referral hooks. None whenever no weight has been recorded.
+    weight_trend: Optional["WeightTrendResult"] = None

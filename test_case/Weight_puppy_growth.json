@@ -1,15 +1,15 @@
 {
-  "scenario": "Healthy high-energy dog. Appetite dipped one point; weight steady across four monthly weigh-ins, so weight stays silent.",
+  "scenario": "Five-month-old puppy gaining steadily. Growth is expected, so gain rules are suppressed entirely and no breed reference is applied - a growing animal cannot be compared with an adult range.",
 
   "pet_profile": {
-    "pet_id": "pet_100001",
-    "pet_name": "Bonnie",
+    "pet_id": "pet_200007",
+    "pet_name": "Scout",
     "species": "dog",
-    "breed": "Vizsla",
+    "breed": "Labrador",
     "sex": "male",
-    "postcode": "4217",
-    "birth_date": "2023-04-12",
-    "is_high_energy": true,
+    "postcode": "3000",
+    "birth_date": "2026-02-01",
+    "is_high_energy": false,
     "worming_compliant": true,
     "vaccination_current": true,
     "weight_management_plan": false
@@ -17,28 +17,28 @@
 
   "weight_log": {
     "readings": [
-      { "kg": 25.2, "at": "2026-02-02" },
-      { "kg": 25.0, "at": "2026-03-02" },
-      { "kg": 24.9, "at": "2026-03-30" },
-      { "kg": 25.0, "at": "2026-04-27" }
+      { "kg": 8.5, "at": "2026-04-27" },
+      { "kg": 10.5, "at": "2026-05-25" },
+      { "kg": 12.0, "at": "2026-06-22" },
+      { "kg": 13.5, "at": "2026-07-20" }
     ]
   },
 
   "check_in_data": {
-    "pet_id": "pet_100001",
-    "timestamp": "2026-04-29T10:15:00Z",
+    "pet_id": "pet_200007",
+    "timestamp": "2026-07-21T09:00:00Z",
 
-    "appetite_scorew": 3,
+    "appetite_score": 4,
     "energy_score": 4,
     "sleep_quality_score": 4,
-    "activity_minutes": 65,
+    "activity_minutes": 60,
 
     "toileting_status": "normal",
     "water_intake_status": "normal",
 
     "blood_in_stool": false,
     "vomiting": false,
-    "diarrhea": false,
+    "diarrhoea": false,
     "collapse": false,
     "breathing_difficulty": false,
     "seizure": false,
@@ -48,7 +48,7 @@
     "tick_found": false,
     "pain_or_discomfort_signs": false,
 
-    "weight_kg": 25.0,
+    "weight_kg": 13.5,
     "owner_concern_level": 1
   },
 
@@ -57,7 +57,8 @@
     "score_present": true,
     "override_tier": null,
     "weight_status": "ok",
-    "weight_direction": "stable",
-    "weight_body_status": "in_reference"
+    "weight_direction": "gain",
+    "weight_is_growing": true,
+    "weight_body_status": "no_reference"
   }
 }

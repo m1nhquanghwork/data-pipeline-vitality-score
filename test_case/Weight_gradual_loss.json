@@ -1,0 +1,64 @@
+{
+  "scenario": "Steady dog losing about 6% of body weight in a month. Below the escalation line, so the score is still shown - reduced, with weight named as the driver and the reading dated.",
+
+  "pet_profile": {
+    "pet_id": "pet_200001",
+    "pet_name": "Rusty",
+    "species": "dog",
+    "breed": "Labrador",
+    "sex": "male",
+    "postcode": "3000",
+    "birth_date": "2020-03-15",
+    "is_high_energy": false,
+    "worming_compliant": true,
+    "vaccination_current": true,
+    "weight_management_plan": false
+  },
+
+  "weight_log": {
+    "readings": [
+      { "kg": 30.0, "at": "2026-04-27" },
+      { "kg": 30.0, "at": "2026-05-25" },
+      { "kg": 30.0, "at": "2026-06-22" },
+      { "kg": 28.2, "at": "2026-07-20" }
+    ]
+  },
+
+  "check_in_data": {
+    "pet_id": "pet_200001",
+    "timestamp": "2026-07-21T09:00:00Z",
+
+    "appetite_score": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 60,
+
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhoea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+
+    "weight_kg": 28.2,
+    "owner_concern_level": 2
+  },
+
+  "expected": {
+    "band": "Bright Green",
+    "score_present": true,
+    "override_tier": null,
+    "weight_status": "ok",
+    "weight_direction": "loss",
+    "drivers_include": ["weight below usual"],
+    "explanation_includes": "reading recorded on"
+  }
+}

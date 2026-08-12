@@ -1,4 +1,6 @@
-{ 
+{
+  "scenario": "Cat well below their usual baseline across appetite, energy, sleep and activity, but with no acute signs and steady weight. Low score, no override - the Watch/Action band doing its job without a safety alert.",
+
   "pet_profile": {
     "pet_id": "pet_100000",
     "pet_name": "Minh",
@@ -9,21 +11,31 @@
     "birth_date": "2023-06-12",
     "is_high_energy": false,
     "worming_compliant": true,
-    "vaccination_current": true
+    "vaccination_current": true,
+    "weight_management_plan": false
   },
-  
+
+  "weight_log": {
+    "readings": [
+      { "kg": 4.0, "at": "2026-01-26" },
+      { "kg": 4.05, "at": "2026-02-23" },
+      { "kg": 3.98, "at": "2026-03-23" },
+      { "kg": 4.0, "at": "2026-04-20" }
+    ]
+  },
+
   "check_in_data": {
     "pet_id": "pet_100000",
     "timestamp": "2026-04-21T10:15:00Z",
-    
+
     "appetite_score": 3,
     "energy_score": 3,
     "sleep_quality_score": 2,
     "activity_minutes": 25,
-    
+
     "toileting_status": "normal",
     "water_intake_status": "normal",
-    
+
     "blood_in_stool": false,
     "vomiting": false,
     "diarrhea": false,
@@ -35,8 +47,17 @@
     "unable_to_urinate": false,
     "tick_found": false,
     "pain_or_discomfort_signs": false,
-    
+
     "weight_kg": 4.0,
     "owner_concern_level": 2
+  },
+
+  "expected": {
+    "band": "Action Needed",
+    "score_present": true,
+    "override_tier": null,
+    "weight_status": "ok",
+    "weight_direction": "stable",
+    "weight_body_status": "no_reference"
   }
 }

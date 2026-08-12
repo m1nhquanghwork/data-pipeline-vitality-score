@@ -1,0 +1,48 @@
+{
+  "scenario": "Every wellbeing indicator at baseline, but worming treatment is overdue. A flat 8-point care-compliance nudge - provisional, and flagged in the report as an open question for the reviewing vet.",
+  "pet_profile": {
+    "pet_id": "pet_300013",
+    "pet_name": "Rolo",
+    "species": "dog",
+    "breed": "Labrador",
+    "sex": "male",
+    "postcode": "3000",
+    "birth_date": "2020-03-15",
+    "is_high_energy": false,
+    "worming_compliant": false,
+    "vaccination_current": true,
+    "weight_management_plan": false
+  },
+  "check_in_data": {
+    "pet_id": "pet_300013",
+    "timestamp": "2026-07-21T09:00:00Z",
+    "appetite_score": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 60,
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhoea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+    "weight_kg": 30.0,
+    "owner_concern_level": 1
+  },
+  "expected": {
+    "band": "Bright Green",
+    "score_present": true,
+    "score": 92,
+    "override_tier": null,
+    "drivers_include": [
+      "worming treatment overdue"
+    ]
+  }
+}

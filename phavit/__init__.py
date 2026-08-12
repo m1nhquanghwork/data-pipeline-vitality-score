@@ -15,9 +15,12 @@ from .models import (
     BaselineSummary,
     RedFlagResult,
     VitalityScoreResult,
+    WeightReading,
+    WeightTrendResult,
 )
 from .red_flags import RedFlagEngine, EMERGENCY_SIGNS
-from .scoring import VitalityScoreEngine
+from .scoring import VitalityScoreEngine, Weights, BASE_PROFILES
+from .weight import compute_weight_trend, validate_readings, body_status
 from .pipeline import process_checkin
 
 __all__ = [
@@ -26,8 +29,15 @@ __all__ = [
     "BaselineSummary",
     "RedFlagResult",
     "VitalityScoreResult",
+    "WeightReading",
+    "WeightTrendResult",
     "RedFlagEngine",
     "EMERGENCY_SIGNS",
     "VitalityScoreEngine",
+    "Weights",
+    "BASE_PROFILES",
+    "compute_weight_trend",
+    "validate_readings",
+    "body_status",
     "process_checkin",
 ]

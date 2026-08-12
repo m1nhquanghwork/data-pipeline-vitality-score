@@ -1,0 +1,50 @@
+{
+  "scenario": "Uncontrolled bleeding. Emergency tier regardless of how good the rest of the check-in looks.",
+  "pet_profile": {
+    "pet_id": "pet_300003",
+    "pet_name": "Tank",
+    "species": "dog",
+    "breed": "Labrador",
+    "sex": "male",
+    "postcode": "3000",
+    "birth_date": "2020-03-15",
+    "is_high_energy": false,
+    "worming_compliant": true,
+    "vaccination_current": true,
+    "weight_management_plan": false
+  },
+  "check_in_data": {
+    "pet_id": "pet_300003",
+    "timestamp": "2026-07-21T09:00:00Z",
+    "appetite_score": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 60,
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhoea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": true,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+    "weight_kg": 30.0,
+    "owner_concern_level": 5
+  },
+  "expected": {
+    "band": "Action Needed",
+    "score_present": false,
+    "baseline_status": "override",
+    "trend": "override",
+    "override_tier": "emergency",
+    "override_trigger": "severe_bleeding",
+    "override_reason_includes": [
+      "Severe or uncontrolled bleeding reported"
+    ]
+  }
+}
