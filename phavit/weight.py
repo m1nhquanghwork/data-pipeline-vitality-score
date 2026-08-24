@@ -23,7 +23,7 @@ from datetime import date, datetime
 from statistics import median
 from typing import List, Optional, Sequence, Tuple
 
-from .models import WeightReading, WeightTrendResult
+from .models import CheckInData, PetProfile, WeightReading, WeightTrendResult
 
 
 # --------------------------------------------------------------------------- #
@@ -83,13 +83,23 @@ DEFAULT_ADULT_FROM_MONTHS = 15
 # --------------------------------------------------------------------------- #
 # These are healthy adult ranges assembled from published breed standards, NOT
 # from population averages. That distinction matters: population means describe
-# what pets DO weigh, and with roughly half of dogs overweight, a population-
-# derived table would read a healthy dog as underweight.
+# what pets DO weigh, and body-condition surveys of UK dogs have put 56-65% of
+# them in the overweight range (German 2018, Vet Rec 182(1):25), so a population-
+# derived table would read a healthy dog as underweight. Overweight risk also
+# varies sharply by breed (Pegram et al. 2021, JSAP 62(7)), which is why the
+# reference is held per breed rather than per species.
 #
-# Body condition score (WSAVA 9-point) is the real clinical reference and should
-# supersede this table wherever an owner-reported BCS exists. This is the
-# fallback for pets with no BCS captured - and it returns "no_reference" for any
-# breed it does not recognise, which includes every crossbreed.
+# NOTE those figures come from direct body-condition ASSESSMENT. Overweight
+# status actually RECORDED in primary-care notes is far lower (~5.7% annual
+# period prevalence, Pegram 2021) - do not quote the two interchangeably.
+#
+# Body condition score (WSAVA 9-point, validated by Laflamme 1997) is the real
+# clinical reference and should supersede this table wherever an owner-reported
+# BCS exists. This is the fallback for pets with no BCS captured - and it returns
+# "no_reference" for any breed it does not recognise, which includes every
+# crossbreed.
+#
+# Full citations: see the References section of PawHealthAI_Vitality_Score.md.
 
 class BreedWeightRef:
     """Healthy adult weight range for a breed, by sex."""
@@ -178,6 +188,13 @@ def _age_months(birth_date: Optional[date], at: date) -> Optional[float]:
     return (at.toordinal() - birth_date.toordinal()) / 30.44
 
 
+def _as_date(when) -> Optional[date]:
+    """Accept either a check-in datetime or a plain date; anything else is None."""
+    if isinstance(when, datetime):
+        return when.date()
+    return when if isinstance(when, date) else None
+
+
 def body_status(
     kg: float,
     species: str,
@@ -211,6 +228,38 @@ def body_status(
     if kg < low * 0.90:
         return "below_reference", is_growing
     return "in_reference", is_growing
+
+
+# --------------------------------------------------------------------------- #
+# Input collection                                                             #
+# --------------------------------------------------------------------------- #
+def readings_from_checkins(
+    checkins: Sequence[CheckInData],
+    extra: Optional[Sequence[WeightReading]] = None,
+) -> List[WeightReading]:
+    """
+    Build the weight log from the weights recorded on weekly check-ins.
+
+    `CheckInData.weight_kg` is optional and usually absent: owners weigh their
+    pet roughly monthly, so most check-ins carry nothing and are skipped. This
+    is the single path from the check-in flow into the weight subsystem - the
+    field is not read anywhere else.
+
+    `extra` merges in readings captured outside the check-in flow (a vet visit,
+    a bulk import). Where a check-in and an `extra` reading fall on the same day
+    the `extra` one wins, because validate_readings() keeps the last entry for a
+    date and the sort below is stable.
+    """
+    out: List[WeightReading] = []
+    for c in checkins or []:
+        kg = getattr(c, "weight_kg", None)
+        at = _as_date(getattr(c, "timestamp", None))
+        if kg is None or at is None:
+            continue
+        out.append(WeightReading(kg=float(kg), at=at))
+    out.extend(extra or [])
+    out.sort(key=lambda r: r.at)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -326,7 +375,18 @@ def compute_weight_trend(
     # across the whole baseline window: that is the interval in which the change
     # from the pet's observed normal actually appeared. Spanning the full window
     # would divide one month's loss across four and hide it.
-    weeks_span = max((current.at - window[-1].at).days / 7.0, MIN_SPAN_WEEKS)
+    # Anchor the rate on the most recent previous reading that is at least
+    # MIN_SPAN_WEEKS old. For monthly weigh-ins that is always the immediately
+    # previous reading, so behaviour is unchanged; for weights arriving with
+    # WEEKLY check-ins it steps back far enough that one noisy reading is
+    # measured over a real interval instead of a single week.
+    anchor = window[-1]
+    for r in reversed(window):
+        if (current.at - r.at).days / 7.0 >= MIN_SPAN_WEEKS:
+            anchor = r
+            break
+
+    weeks_span = max((current.at - anchor.at).days / 7.0, MIN_SPAN_WEEKS)
     rate = pct_change * 4.0 / weeks_span
 
     status_label, is_growing = body_status(
@@ -380,15 +440,38 @@ def compute_weight_trend(
     )
 
 
+def trend_from_checkins(
+    pet: PetProfile,
+    checkins: Sequence[CheckInData],
+    extra: Optional[Sequence[WeightReading]] = None,
+) -> Optional[WeightTrendResult]:
+    """
+    Derive the weight signal straight from the check-in stream.
+
+    This is the default path for pets whose weights arrive with their check-ins.
+    Where a weight log is stored separately - computed once at weigh-in and read
+    back each week, as the module docstring describes - pass that stored result
+    to process_checkin() instead and this is never called.
+
+    Returns None when no weight has ever been recorded, so the engine falls back
+    to behaving exactly as it did before weight existed.
+    """
+    readings = readings_from_checkins(checkins, extra)
+    if not readings:
+        return None
+    return compute_weight_trend(
+        readings,
+        species=pet.species,
+        breed=pet.breed,
+        sex=pet.sex,
+        birth_date=pet.birth_date,
+        weight_management_plan=pet.weight_management_plan,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Score integration helpers                                                    #
 # --------------------------------------------------------------------------- #
-def _as_date(when) -> Optional[date]:
-    if isinstance(when, datetime):
-        return when.date()
-    return when if isinstance(when, date) else None
-
-
 def staleness_factor(trend: Optional[WeightTrendResult], at) -> float:
     """
     How much of the weight signal still applies at date `at`. 1.0 while fresh,
@@ -425,10 +508,43 @@ def weight_penalty(trend: Optional[WeightTrendResult], at) -> float:
     return ramp * MAX_WEIGHT_PENALTY * staleness_factor(trend, at)
 
 
-def is_declining_indicator(trend: Optional[WeightTrendResult], at) -> bool:
-    """Does weight count towards the score's multiple-indicators-declining tally?"""
+def declining_strength(trend: Optional[WeightTrendResult], at) -> float:
+    """
+    How strongly weight counts towards the score's multiple-indicators-declining
+    tally, as a fraction in [0.0, 1.0].
+
+    A fraction rather than a boolean so the compound deduction fades in step with
+    the direct penalty. A hard cut-off meant a signal one day short of
+    STALE_WEEKS carried its full compound weight and the next week carried none,
+    moving the score by double figures on no new data.
+    """
     if trend is None or trend.status != "ok" or trend.direction != "loss":
-        return False
-    if trend.managed or staleness_factor(trend, at) <= 0.0:
-        return False
-    return trend.rate_per_4w >= NOTABLE_LOSS_PCT
+        return 0.0
+    if trend.managed or trend.rate_per_4w < NOTABLE_LOSS_PCT:
+        return 0.0
+    return staleness_factor(trend, at)
+
+
+def signal_quality(trend: Optional[WeightTrendResult], at) -> str:
+    """
+    How far the score can trust the weight signal at date `at`. Lets scoring.py
+    adjust its stated confidence without duplicating the staleness and status
+    rules that belong to this module.
+
+      "none"       - no trend at all: nothing recorded, or too few readings to
+                     compare. The score is identical to the pre-weight engine in
+                     both cases, so confidence is untouched.
+      "ok"         - a usable trend, fresh enough to apply in full.
+      "stale"      - a real trend that is fading with age. The pet needs
+                     re-weighing, not re-checking.
+      "unreliable" - the latest reading failed screening. The owner should
+                     correct the entry.
+
+    "stale" and "unreliable" are kept apart because they call for different
+    things from the owner, and the score says so in different words.
+    """
+    if trend is None or trend.status == "insufficient":
+        return "none"
+    if trend.status != "ok":
+        return "unreliable"
+    return "ok" if staleness_factor(trend, at) >= 1.0 else "stale"

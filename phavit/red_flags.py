@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from .models import CheckInData, RedFlagResult, WeightTrendResult
-from .weight import NOTABLE_LOSS_PCT, staleness_factor
+from .weight import declining_strength, staleness_factor
 
 
 # Emergency signs: any one hides the reassuring score and routes to emergency
@@ -36,13 +36,12 @@ class RedFlagEngine:
         self.weight_trend = weight_trend
 
     def _weight_loss_present(self, current: CheckInData) -> bool:
-        """A usable, fresh, unmanaged loss at or past the notable threshold."""
-        wt = self.weight_trend
-        if wt is None or wt.status != "ok" or wt.direction != "loss" or wt.managed:
-            return False
-        if staleness_factor(wt, current.timestamp) <= 0.0:
-            return False
-        return wt.rate_per_4w >= NOTABLE_LOSS_PCT
+        """
+        A usable, unmanaged loss at or past the notable threshold, not yet fully
+        stale. Delegates to weight.py so the safety net and the score agree on
+        what counts as a loss rather than each keeping their own copy of the rule.
+        """
+        return declining_strength(self.weight_trend, current.timestamp) > 0.0
 
     def evaluate(self, current: CheckInData) -> RedFlagResult:
         # ---------- TIER 1: EMERGENCY ----------

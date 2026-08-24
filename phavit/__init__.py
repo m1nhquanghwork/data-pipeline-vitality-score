@@ -20,7 +20,15 @@ from .models import (
 )
 from .red_flags import RedFlagEngine, EMERGENCY_SIGNS
 from .scoring import VitalityScoreEngine, Weights, BASE_PROFILES
-from .weight import compute_weight_trend, validate_readings, body_status
+from .weight import (
+    compute_weight_trend,
+    validate_readings,
+    body_status,
+    readings_from_checkins,
+    trend_from_checkins,
+    declining_strength,
+    signal_quality,
+)
 from .pipeline import process_checkin
 
 __all__ = [
@@ -39,5 +47,9 @@ __all__ = [
     "compute_weight_trend",
     "validate_readings",
     "body_status",
+    "readings_from_checkins",
+    "trend_from_checkins",
+    "declining_strength",
+    "signal_quality",
     "process_checkin",
 ]

@@ -246,6 +246,133 @@ softened, but a halving of activity is penalised far more heavily.
 Machine learning, real user data, production app screens, changes to live PawHealthAI
 behaviour, and final clinical rules - all out of scope until veterinary review is complete.
 
+## 10. References
+
+**How to read this list.** These references establish that the engine's *approach* is a
+recognised one and that its thresholds sit in a plausible range. They are **not** the
+derivation of the numbers. Every constant in this report - the 0-100 scale, the band
+cut-offs at 85/70/50, the `DEVIATION_WEIGHT` of 60, the weighting profiles in §8.2, the
+-8 worming nudge, the -12 compound deduction - is an engineering placeholder chosen for
+v0.2. Where the literature and a constant disagree, the literature wins and the constant
+should change. That is the point of §8.
+
+**Scope note.** Sections 1-9 above document the engine as it stood before the weight
+subsystem (`phavit/weight.py`) was added. References [3]-[8] cover that later work, which
+is currently documented in `PawHealthAI_Vitality_Score.md` rather than here. Bringing this
+report up to date is outstanding - see the note at the end of this section.
+
+### Scoring architecture
+
+**[1]** Royal College of Physicians (2017). *National Early Warning Score (NEWS) 2:
+Standardising the assessment of acute-illness severity in the NHS.* Updated report of a
+working party. London: RCP.
+https://www.rcp.ac.uk/media/a4ibkkbf/news2-final-report_0_0.pdf
+
+> *Supports §3.* NEWS2 aggregates weighted parameters into a single number, sorts it into
+> banded escalation tiers, and lets a clinical trigger override the aggregate. That is the
+> same three-layer structure described in §3, and it is the established precedent for the
+> design decision in §3 "Layer 2" that an override must **bypass** the score rather than be
+> folded into it as a deduction.
+
+**[2]** Reid, J., Wiseman-Orr, L. and Scott, M. (2020). Development of an early warning
+system for owners using a validated health-related quality of life (HRQL) instrument for
+companion animals and its use in a large cohort of dogs. *Journal of Small Animal
+Practice*. https://pmc.ncbi.nlm.nih.gov/articles/PMC7541963/
+
+> *Supports §3 Layer 1, §4.* The nearest published analogue to this engine: an
+> owner-completed, psychometrically validated instrument scoring four behavioural domains
+> (energy, happiness, activity, calmness) closely comparable to the check-in's appetite,
+> energy, sleep and activity, used as an early-warning system across a large cohort. The
+> basis for treating owner-reported domains tracked against the animal's own history as
+> carrying real signal, and for framing the output as wellbeing tracking rather than
+> diagnosis (§3 "Removal of diagnostic outputs").
+
+### Body condition
+
+**[3]** Laflamme, D. P. (1997). Development and validation of a body condition score
+system for dogs. *Canine Practice*, 22(4), 10-15. *(Companion paper for cats: Laflamme,
+D. P. (1997). Development and validation of a body condition score system for cats: a
+clinical tool. Feline Practice, 25(5-6), 13-18.)*
+
+> *Supports:* the 9-point BCS scale as the validated clinical measure of body condition,
+> shown to be repeatable both within and between scorers.
+
+**[4]** World Small Animal Veterinary Association, Global Nutrition Committee.
+*WSAVA Global Nutrition Toolkit.*
+https://wsava.org/wp-content/uploads/2021/04/WSAVA-Global-Nutrition-Toolkit-English.pdf
+
+> *Supports:* BCS as the international standard (4-5/9 ideal for dogs, 5/9 for cats).
+> **This is the reference the breed weight table in `weight.py` is a stand-in for.** Where
+> an owner- or vet-recorded BCS exists it should supersede the table entirely: BCS measures
+> body condition directly, while a weight range only infers it from frame.
+
+**[5]** German, A. J. (2018). Dangerous trends in pet obesity. *Veterinary Record*,
+182(1), 25. https://bvajournals.onlinelibrary.wiley.com/doi/10.1136/vr.k2
+
+> *Supports:* the scale of overweight in the pet population - body-condition surveys of UK
+> dogs put 56-65% in the overweight range - and therefore why a breed reference must be
+> built from breed standards rather than from what pets actually weigh.
+
+**[6]** Pegram, C., et al. (2021). Frequency, breed predisposition and demographic risk
+factors for overweight status in dogs in the UK. *Journal of Small Animal Practice*,
+62(7). VetCompass Programme, Royal Veterinary College.
+https://onlinelibrary.wiley.com/doi/10.1111/jsap.13325
+
+> *Supports:* breed-level variation in overweight risk, and hence holding the reference per
+> breed rather than per species. **Read with care:** this measures overweight status
+> *recorded by a vet in clinical notes* (~5.7% annual period prevalence), far below the
+> 56-65% found by direct body-condition assessment [5]. The RVC describes the recorded
+> figure as "the tip of the iceberg." Do not quote the two interchangeably.
+
+### Weight change as a signal
+
+**[7]** Freeman, L. M., Lachaud, M. P., Matthews, S., Rhodes, L. and Zollers, B. (2016).
+Evaluation of weight loss over time in cats with chronic kidney disease. *Journal of
+Veterinary Internal Medicine*, 30(5), 1661-1666. doi:10.1111/jvim.14561, PMID 27527534
+https://onlinelibrary.wiley.com/doi/abs/10.1111/jvim.14561
+
+> *Supports:* weight loss as an early-warning signal, and the rough placement of the 5%
+> "notable" and 10% "urgent" thresholds. In 569 cats, weight loss was detectable up to
+> three years before CKD diagnosis, with around 10% of body weight lost in the year
+> preceding it. This is a *post-hoc* sanity check on thresholds chosen by engineering
+> judgement, not their source.
+
+**[8]** Salt, C., Morris, P. J., German, A. J., et al. (2017). Growth standard charts for
+monitoring bodyweight in dogs of different sizes. *PLoS ONE*, 12(9), e0182064. WALTHAM
+Centre for Pet Nutrition. doi:10.1371/journal.pone.0182064
+https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0182064
+
+> *Supports:* suppressing gain rules while a pet is still growing. Drawn from a
+> primary-care database holding 3.1 million purebred dogs of the selected breeds aged
+> 10.4 weeks to 2.25 years; centile curves were built for 100 breed-specific models, with
+> the clinical charts based on five size categories. **The obvious upgrade path:** the
+> engine gates growth on a crude "adult from N months" cut-off per breed, which these
+> percentile curves would replace with a real growth trajectory.
+
+### Known citation gaps
+
+Two parts of the engine are **not** covered by anything above and should not be presented
+as though they are:
+
+1. **The breed weight table.** No open, normative, per-breed healthy-weight dataset exists.
+   The 19 entries in `weight.py` are assembled from published breed standards and are the
+   weakest-sourced component of the system. Reference [4] is the intended replacement
+   wherever a BCS is available.
+2. **The non-diagnostic constraint.** The engine's most important safety property - that it
+   never names a disease (§3 "Removal of diagnostic outputs") - rests on product judgement
+   rather than a cited standard. Veterinary telehealth and VCPR guidance (AVMA, RCVS) is
+   the likely place to look. This should be resolved before any external publication.
+
+### Outstanding: this report predates the weight subsystem
+
+Sections 1-9 do not describe `phavit/weight.py` at all. Specifically still to update: the
+deliverables list and fixture count in §2; the module list in §3; the score equation in §3
+Layer 1 (no weight term); the Layer 2 trigger table in §3 (missing `notable_weight_loss`,
+`weight_loss_with_signs`, `rapid_weight_gain`); the test results in §5; the age/species
+claim in §7; the weighting table in §8.2 (predates the body-status modifiers); and §8's
+open questions (nothing on the weight thresholds). Until that is done,
+`PawHealthAI_Vitality_Score.md` is the current description of the weight subsystem.
+
 ---
 
 *Every rule and threshold in v0.2 is provisional and flagged for veterinary review rather

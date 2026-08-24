@@ -16,7 +16,7 @@ from .models import (
     VitalityScoreResult,
     WeightTrendResult,
 )
-from .weight import is_declining_indicator, weight_penalty
+from .weight import declining_strength, signal_quality, weight_penalty
 
 
 BAND_BRIGHT = 85
@@ -36,12 +36,32 @@ ACTIVITY_DROP_THRESHOLD_HEAVY = 0.20
 # the explanation layer can tell "nothing to report" from a real driver.
 NO_DRIVERS = "all tracked indicators in line with usual baseline"
 
+# A data-quality driver, not a wellbeing one. Listed for the owner and for WS9,
+# but excluded from the "compared with their usual baseline" copy - it describes
+# the recording, not the pet.
+WEIGHT_RECHECK_DRIVER = "last recorded weight needs re-checking"
+WEIGHT_STALE_DRIVER = "weight not recorded recently"
+
+# Neither describes the pet, so both are kept out of the "compared with their
+# usual baseline" copy and carried as their own sentence instead.
+DATA_QUALITY_DRIVERS = (WEIGHT_RECHECK_DRIVER, WEIGHT_STALE_DRIVER)
+
 # Extra activity weight for a pet above / well above their breed reference.
 # Applied then renormalised - see Weights.normalised().
 BODY_STATUS_ACTIVITY_BUMP = {
     "above_reference": 0.05,
     "well_above_reference": 0.10,
 }
+
+# The mirror of the activity bump. For a pet BELOW their breed reference the
+# lever is intake rather than exercise, so a fall in appetite counts for more.
+# Still never a deduction in itself - only a shift in emphasis.
+BODY_STATUS_APPETITE_BUMP = {
+    "below_reference": 0.10,
+}
+
+# Most points the multiple-indicators-declining rule can remove.
+COMPOUND_DECLINE_DEDUCTION = 12.0
 
 
 @dataclass(frozen=True)
@@ -118,14 +138,19 @@ class VitalityScoreEngine:
         profile = BASE_PROFILES["high_energy" if self.pet.is_high_energy else "standard"]
 
         body_status = self.weight_trend.body_status if self.weight_trend else None
-        bump = BODY_STATUS_ACTIVITY_BUMP.get(body_status, 0.0)
-        if not bump:
+        activity_bump = BODY_STATUS_ACTIVITY_BUMP.get(body_status, 0.0)
+        appetite_bump = BODY_STATUS_APPETITE_BUMP.get(body_status, 0.0)
+        if not activity_bump and not appetite_bump:
             return profile
 
         return replace(
             profile,
-            activity=profile.activity + bump,
-            activity_drop_threshold=ACTIVITY_DROP_THRESHOLD_HEAVY,
+            activity=profile.activity + activity_bump,
+            appetite=profile.appetite + appetite_bump,
+            activity_drop_threshold=(
+                ACTIVITY_DROP_THRESHOLD_HEAVY if activity_bump
+                else profile.activity_drop_threshold
+            ),
         ).normalised()
 
     def calculate(self, current: CheckInData) -> VitalityScoreResult:
@@ -196,17 +221,33 @@ class VitalityScoreEngine:
         if w_penalty > 0:
             drivers.append("weight below usual")
 
+        # Weight data quality. Neither of these is a wellbeing judgement - they
+        # tell the owner what the score could not see, rather than passing
+        # silently on an entry we rejected or a reading that has aged out.
+        weight_quality = signal_quality(self.weight_trend, current.timestamp)
+        if weight_quality == "unreliable":
+            drivers.append(WEIGHT_RECHECK_DRIVER)
+        elif weight_quality == "stale":
+            drivers.append(WEIGHT_STALE_DRIVER)
+
         # Signal vs noise: multiple indicators declining together is more concerning
         # than a single one-day dip (section 4.3 - "multiple indicators declining together").
-        declining = sum([
-            drop_appetite >= 1,
-            drop_energy >= 1,
-            drop_sleep >= 1,
-            activity_dropped,
-            is_declining_indicator(self.weight_trend, current.timestamp),
-        ])
-        if declining >= 2:
-            score -= 12.0
+        #
+        # Summed as a float rather than counted, because weight contributes a
+        # decaying strength rather than a yes/no. The deduction is the excess
+        # over one declining indicator, capped: two solid indicators give the
+        # full deduction and three or more still give the same, exactly as the
+        # boolean count did, while a fading weight signal now tapers instead of
+        # falling off a cliff.
+        declining = (
+            float(drop_appetite >= 1)
+            + float(drop_energy >= 1)
+            + float(drop_sleep >= 1)
+            + float(activity_dropped)
+            + declining_strength(self.weight_trend, current.timestamp)
+        )
+        if declining > 1.0:
+            score -= COMPOUND_DECLINE_DEDUCTION * min(1.0, declining - 1.0)
             drivers.append("several indicators declining together")
 
         # Provisional, non-clinical care-compliance nudge.
@@ -217,8 +258,16 @@ class VitalityScoreEngine:
         final = int(max(0, min(100, round(score))))
         band = self._band(final)
         confidence = "high" if total_checkins >= 6 else "moderate"
-        if not drivers:
-            drivers = [NO_DRIVERS]
+        # Weight can now move the score by real points, so a recorded-but-
+        # untrustworthy weight signal must not be reported at full confidence.
+        # "none" (never weighed, or too few readings) is left alone: with no
+        # trend the engine behaves exactly as it did before weight existed.
+        if confidence == "high" and weight_quality in ("stale", "unreliable"):
+            confidence = "moderate"
+        # A data-quality nudge is not a driver of the score, so on its own it must
+        # not read as though something moved. Keep the "nothing changed" line.
+        if not any(d not in DATA_QUALITY_DRIVERS for d in drivers):
+            drivers.insert(0, NO_DRIVERS)
         trend = "stable" if final >= BAND_MEDIUM else "declining vs baseline"
 
         return VitalityScoreResult(
@@ -229,7 +278,12 @@ class VitalityScoreEngine:
             confidence=confidence,
             override=None,
             drivers=drivers,
-            explanation=self._explain(band, drivers, weight_contributed=w_penalty > 0),
+            explanation=self._explain(
+                band,
+                drivers,
+                weight_contributed=w_penalty > 0,
+                weight_quality=weight_quality,
+            ),
             trend=trend,
         )
 
@@ -256,10 +310,49 @@ class VitalityScoreEngine:
             f"{trend.as_of.strftime('%d %b %Y')}."
         )
 
-    def _explain(self, band: str, drivers: List[str], weight_contributed: bool = False) -> str:
+    def _data_quality_note(self, weight_quality: str) -> str:
+        """
+        Owner-facing prompt about the weight RECORDING rather than the pet.
+
+        Deliberately plain, and never built from WeightTrendResult.notes - those
+        are internal diagnostics and must not reach owner copy.
+
+        The stale prompt matters because the score quietly RISES as an old weight
+        signal decays. Without it an owner sees an improving number and has no
+        way to know it reflects an expiring reading, not a recovering pet.
+        """
+        if weight_quality == "unreliable":
+            return (
+                " The most recent weight entry looks unusual, so it has not been used "
+                "here - please check it and re-enter it if it was a typo."
+            )
+        if weight_quality == "stale":
+            trend = self.weight_trend
+            when = (
+                f" is from {trend.as_of.strftime('%d %b %Y')}"
+                if trend is not None and trend.as_of is not None
+                else " is getting old"
+            )
+            return (
+                f" The last recorded weight{when}, so it is counting for less here - "
+                f"a fresh weigh-in would keep this accurate."
+            )
+        return ""
+
+    def _explain(
+        self,
+        band: str,
+        drivers: List[str],
+        weight_contributed: bool = False,
+        weight_quality: str = "none",
+    ) -> str:
         name = self.pet.name
-        note = self._weight_note() if weight_contributed else ""
-        real_drivers = [d for d in drivers if d != NO_DRIVERS]
+        # The stale note already names the reading date, so the routine "which
+        # reading was used" line would just repeat it back.
+        dates_the_reading = weight_contributed and weight_quality != "stale"
+        note = self._weight_note() if dates_the_reading else ""
+        note += self._data_quality_note(weight_quality)
+        real_drivers = [d for d in drivers if d != NO_DRIVERS and d not in DATA_QUALITY_DRIVERS]
 
         if band in ("Bright Green", "Medium Green"):
             # A green band can still carry a driver (a weight drop, an overdue
@@ -275,7 +368,7 @@ class VitalityScoreEngine:
                 f"{name}'s indicators are tracking in line with their usual baseline this week. "
                 f"No emergency red flags were reported. Keep up the regular check-ins.{note}"
             )
-        driver_text = ", ".join(drivers[:2]) if drivers else "small changes from baseline"
+        driver_text = ", ".join(real_drivers[:2]) if real_drivers else "small changes from baseline"
         return (
             f"{name}'s score is lower this week mainly because {driver_text} compared with their "
             f"usual baseline. This is a wellbeing trend, not a diagnosis. If it continues or "

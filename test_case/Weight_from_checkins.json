@@ -1,0 +1,125 @@
+{
+  "scenario": "No separate weight log at all - the owner just types a weight into the check-in whenever they get round to weighing. Most weeks are blank. The engine collects the weights off the check-in stream itself and picks up the same gradual loss it would have seen from a stored log.",
+
+  "pet_profile": {
+    "pet_id": "pet_200010",
+    "pet_name": "Scout",
+    "species": "dog",
+    "breed": "Labrador",
+    "sex": "male",
+    "postcode": "3000",
+    "birth_date": "2020-02-18",
+    "is_high_energy": false,
+    "worming_compliant": true,
+    "vaccination_current": true,
+    "weight_management_plan": false
+  },
+
+  "previous_checkins": [
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-05-01T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60,
+      "weight_kg": 32.0
+    },
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-05-08T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60
+    },
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-05-15T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60
+    },
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-05-22T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60
+    },
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-05-29T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60,
+      "weight_kg": 30.6
+    },
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-06-05T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60
+    },
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-06-12T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60
+    },
+    {
+      "pet_id": "pet_200010",
+      "timestamp": "2026-06-19T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 60
+    }
+  ],
+
+  "check_in_data": {
+    "pet_id": "pet_200010",
+    "timestamp": "2026-06-26T09:00:00Z",
+
+    "appetite_score": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 60,
+
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhoea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+
+    "weight_kg": 29.4,
+    "owner_concern_level": 2
+  },
+
+  "expected": {
+    "band": "Bright Green",
+    "score_present": true,
+    "confidence": "high",
+    "override_tier": null,
+    "weight_status": "ok",
+    "weight_direction": "loss",
+    "weight_body_status": "in_reference",
+    "drivers_include": ["weight below usual"]
+  }
+}

@@ -16,6 +16,7 @@ from .models import (
 )
 from .red_flags import RedFlagEngine
 from .scoring import VitalityScoreEngine
+from .weight import trend_from_checkins
 
 
 def _override_explanation(pet: PetProfile, rf: RedFlagResult) -> str:
@@ -47,13 +48,20 @@ def process_checkin(
     current completed check-in is part of the scoreable set, so the first score
     unlocks at 4 total (3 previous + current), not the 5th event.
 
-    `weight_trend` is the LATEST STORED result from the monthly weight subsystem
-    (see weight.py). It is read here, never recomputed - weight runs on its own
-    cadence. Passing None makes the engine behave exactly as it did before weight
-    was introduced.
+    `weight_trend` is the LATEST STORED result from the weight subsystem (see
+    weight.py). Pass it when weights are held in their own log, computed once at
+    weigh-in: it is then read here and never recomputed.
+
+    When it is omitted, the trend is derived from the weights recorded on the
+    check-ins themselves (`CheckInData.weight_kg`), which is the default path for
+    pets with no separate weight log. A pet with no recorded weight at all still
+    yields None, so the engine behaves exactly as it did before weight existed.
     """
     history = previous_checkins
     current = current_checkin
+
+    if weight_trend is None:
+        weight_trend = trend_from_checkins(pet, list(history) + [current])
 
     rf = RedFlagEngine(history=history, weight_trend=weight_trend).evaluate(current)
 

@@ -1,0 +1,110 @@
+{
+  "scenario": "The pet was weighed regularly and then stopped: the last reading is ten weeks old. Nothing about the pet has changed, so the score stays at the top - but the weight signal is fading out of it. The engine says so plainly and asks for a fresh weigh-in rather than letting an expiring reading quietly stop counting.",
+
+  "pet_profile": {
+    "pet_id": "pet_200011",
+    "pet_name": "Maple",
+    "species": "dog",
+    "breed": "Labrador",
+    "sex": "female",
+    "postcode": "3000",
+    "birth_date": "2019-11-02",
+    "is_high_energy": false,
+    "worming_compliant": true,
+    "vaccination_current": true,
+    "weight_management_plan": false
+  },
+
+  "weight_log": {
+    "readings": [
+      { "kg": 28.0, "at": "2026-04-03" },
+      { "kg": 28.0, "at": "2026-05-01" },
+      { "kg": 27.8, "at": "2026-05-29" }
+    ]
+  },
+
+  "previous_checkins": [
+    {
+      "pet_id": "pet_200011",
+      "timestamp": "2026-07-03T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 55
+    },
+    {
+      "pet_id": "pet_200011",
+      "timestamp": "2026-07-10T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 55
+    },
+    {
+      "pet_id": "pet_200011",
+      "timestamp": "2026-07-17T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 55
+    },
+    {
+      "pet_id": "pet_200011",
+      "timestamp": "2026-07-24T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 55
+    },
+    {
+      "pet_id": "pet_200011",
+      "timestamp": "2026-07-31T09:00:00Z",
+      "appetite_score": 4,
+      "energy_score": 4,
+      "sleep_quality_score": 4,
+      "activity_minutes": 55
+    }
+  ],
+
+  "check_in_data": {
+    "pet_id": "pet_200011",
+    "timestamp": "2026-08-07T09:00:00Z",
+
+    "appetite_score": 4,
+    "energy_score": 4,
+    "sleep_quality_score": 4,
+    "activity_minutes": 55,
+
+    "toileting_status": "normal",
+    "water_intake_status": "normal",
+
+    "blood_in_stool": false,
+    "vomiting": false,
+    "diarrhoea": false,
+    "collapse": false,
+    "breathing_difficulty": false,
+    "seizure": false,
+    "severe_bleeding": false,
+    "suspected_toxin_ingestion": false,
+    "unable_to_urinate": false,
+    "tick_found": false,
+    "pain_or_discomfort_signs": false,
+
+    "owner_concern_level": 1
+  },
+
+  "expected": {
+    "band": "Bright Green",
+    "score_present": true,
+    "score": 100,
+    "confidence": "moderate",
+    "override_tier": null,
+    "weight_status": "ok",
+    "weight_direction": "stable",
+    "drivers_include": [
+      "all tracked indicators in line with usual baseline",
+      "weight not recorded recently"
+    ],
+    "explanation_includes": "a fresh weigh-in would keep this accurate"
+  }
+}

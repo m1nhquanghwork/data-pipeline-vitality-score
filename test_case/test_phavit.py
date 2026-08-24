@@ -18,6 +18,8 @@ Covers the eight states the actionable plan requires:
   12. Escalations: severe loss, loss alongside another sign, rapid gain
   13. Suppressions: managed weight plans, growing puppies
   14. Weighting profiles stay normalised when body status shifts them
+  15. Weights arriving on the check-ins themselves, blank weeks included
+  16. Data-quality prompts: re-check a bad entry, re-weigh a stale one
 
 Runs two ways:
   * with pytest:   python -m pytest test_case/test_phavit.py
@@ -37,8 +39,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from phavit.models import CheckInData, PetProfile, VitalityScoreResult, WeightReading
 from phavit.pipeline import process_checkin
 from phavit.red_flags import EMERGENCY_SIGNS
-from phavit.scoring import BASE_PROFILES, VitalityScoreEngine
-from phavit.weight import compute_weight_trend, staleness_factor, weight_penalty
+from phavit.scoring import (
+    BASE_PROFILES,
+    DATA_QUALITY_DRIVERS,
+    NO_DRIVERS,
+    VitalityScoreEngine,
+    WEIGHT_RECHECK_DRIVER,
+    WEIGHT_STALE_DRIVER,
+)
+from phavit.weight import (
+    FRESH_WEEKS,
+    MIN_SPAN_WEEKS,
+    compute_weight_trend,
+    declining_strength,
+    readings_from_checkins,
+    signal_quality,
+    staleness_factor,
+    trend_from_checkins,
+    weight_penalty,
+)
 
 TEST_DIR = Path(__file__).resolve().parent
 
@@ -1108,6 +1127,243 @@ def test_every_result_carries_an_explanation_and_a_driver():
             assert r.explanation.strip(), (current, len(history))
             assert r.drivers and all(d.strip() for d in r.drivers), (current, len(history))
             _assert_no_disease_terms(r.explanation)
+
+
+# =========================================================================== #
+#                                                                             #
+#   SECTION 17 - WEIGHT ON THE CHECK-IN STREAM, AND DATA-QUALITY PROMPTS      #
+#                                                                             #
+# =========================================================================== #
+
+WEEKLY_START = datetime(2026, 5, 1)
+
+
+def _weekly(pet_id: str, weights: dict, n: int = 21, **kw) -> List[CheckInData]:
+    """
+    n weekly check-ins from WEEKLY_START. `weights` maps week index -> kg; any
+    week not listed carries no weight at all, which is the normal case.
+    """
+    return [
+        mk_checkin(pet_id, timestamp=WEEKLY_START + timedelta(weeks=w),
+                   weight_kg=weights.get(w), **kw)
+        for w in range(n)
+    ]
+
+
+def _at(weeks: float, **kw) -> CheckInData:
+    """A check-in `weeks` after the last weigh-in, for ageing a stored trend."""
+    ts = datetime.combine(LAST_WEIGH_IN, datetime.min.time()) + timedelta(weeks=weeks)
+    return mk_checkin("pet_1", timestamp=ts, **kw)
+
+
+def _score_aged(trend, weeks: float, **kw):
+    pet = make_pet()
+    return process_checkin(pet, make_history(pet.pet_id, 4), _at(weeks, **kw),
+                           weight_trend=trend)
+
+
+# --- Collecting weights off the check-ins ---------------------------------- #
+def test_readings_from_checkins_skips_weeks_with_no_weight():
+    cis = _weekly("pet_1", {0: 32.0, 4: 30.6, 8: 29.4}, n=9)
+    readings = readings_from_checkins(cis)
+    assert [r.kg for r in readings] == [32.0, 30.6, 29.4]
+    assert [r.at for r in readings] == sorted(r.at for r in readings)
+
+
+def test_readings_from_checkins_is_empty_when_nothing_was_weighed():
+    assert readings_from_checkins(_weekly("pet_1", {}, n=6)) == []
+
+
+def test_explicit_reading_wins_over_a_checkin_on_the_same_day():
+    cis = _weekly("pet_1", {0: 30.0}, n=1)
+    same_day = WeightReading(kg=28.0, at=cis[0].timestamp.date())
+    readings = readings_from_checkins(cis, extra=[same_day])
+    # validate_readings() keeps the LAST entry for a date, so the explicit
+    # weigh-in must sort after the value recorded on the check-in.
+    assert readings[-1].kg == 28.0
+
+
+def test_trend_from_checkins_is_none_when_no_weight_was_ever_recorded():
+    pet = make_pet()
+    assert trend_from_checkins(pet, _weekly(pet.pet_id, {}, n=8)) is None
+
+
+def test_pipeline_derives_the_trend_when_none_is_supplied():
+    pet = make_pet()
+    cis = _weekly(pet.pet_id, {0: 32.0, 4: 30.6, 8: 29.4}, n=9)
+    r = process_checkin(pet, cis[:-1], cis[-1])          # no weight_trend argument
+    assert r.weight_trend is not None
+    assert r.weight_trend.status == "ok"
+    assert r.weight_trend.direction == "loss"
+    assert "weight below usual" in r.drivers
+
+
+def test_a_supplied_trend_takes_precedence_over_the_checkin_stream():
+    pet = make_pet()
+    cis = _weekly(pet.pet_id, {0: 32.0, 4: 30.6, 8: 29.4}, n=9)
+    stored = trend_for([30.0, 30.0, 30.0])              # stable, unrelated to the stream
+    r = process_checkin(pet, cis[:-1], cis[-1], weight_trend=stored)
+    assert r.weight_trend is stored
+    assert "weight below usual" not in r.drivers
+
+
+def test_no_weight_anywhere_leaves_the_engine_pre_weight():
+    pet = make_pet()
+    cis = _weekly(pet.pet_id, {}, n=9)
+    r = process_checkin(pet, cis[:-1], cis[-1])
+    assert r.weight_trend is None
+    assert r.score == 100
+    assert r.confidence == "high"
+    assert r.drivers == [NO_DRIVERS]
+
+
+# --- Weekly but optional: blank weeks carry the trend, not the reading ------ #
+def test_blank_weeks_hold_the_score_steady():
+    pet = make_pet()
+    cis = _weekly(pet.pet_id, {0: 32.0, 4: 29.4})
+    weighed_on = cis[4].timestamp.date()
+
+    scored = [process_checkin(pet, cis[:w], cis[w]) for w in range(5, 12)]
+    scores = {r.score for r in scored}
+    assert len(scores) == 1, "score moved on weeks with no weigh-in: %s" % scores
+    assert scores.pop() < 100, "the loss should still be deducting"
+    # The reading is carried, never re-dated - that is what staleness runs on.
+    assert all(r.weight_trend.as_of == weighed_on for r in scored)
+
+
+def test_the_signal_expires_rather_than_persisting_forever():
+    pet = make_pet()
+    cis = _weekly(pet.pet_id, {0: 32.0, 4: 29.4})
+    late = process_checkin(pet, cis[:18], cis[18]).score
+    early = process_checkin(pet, cis[:10], cis[10]).score
+    assert late > early
+
+
+# --- No cliff as the signal ages ------------------------------------------- #
+def test_declining_strength_tapers_instead_of_switching_off():
+    trend = trend_for([32.0, 32.0, 29.4])
+    strengths = [declining_strength(trend, _at(w).timestamp)
+                 for w in (FRESH_WEEKS, 9, 10, 11, 12)]
+    assert strengths[0] == 1.0
+    assert strengths[-1] == 0.0
+    assert strengths == sorted(strengths, reverse=True)
+    assert all(0.0 < x < 1.0 for x in strengths[1:-1]), strengths
+
+
+def test_score_has_no_cliff_as_the_weight_signal_expires():
+    trend = trend_for([32.0, 32.0, 29.4])
+    weeks = [8, 9, 10, 11, 11.9, 12, 13]
+    scores = [_score_aged(trend, w, sleep_quality_score=2).score for w in weeks]
+    jumps = [abs(b - a) for a, b in zip(scores, scores[1:])]
+    assert max(jumps) <= 7, dict(zip(weeks, scores))
+    # The old boolean tally moved this pair by 12 points on no new data.
+    assert abs(scores[weeks.index(12)] - scores[weeks.index(11.9)]) <= 2
+
+
+def test_compound_rule_is_unchanged_for_non_weight_indicators():
+    pet = make_pet()
+    hist = make_history(pet.pet_id, 4)
+    one = process_checkin(pet, hist, mk_checkin(pet.pet_id, sleep_quality_score=3))
+    two = process_checkin(pet, hist,
+                          mk_checkin(pet.pet_id, sleep_quality_score=3,
+                                     appetite_score=3))
+    three = process_checkin(pet, hist,
+                            mk_checkin(pet.pet_id, sleep_quality_score=3,
+                                       appetite_score=3, energy_score=3))
+    assert "several indicators declining together" not in one.drivers
+    for r in (two, three):
+        assert "several indicators declining together" in r.drivers
+    # Adding a third indicator costs only its own weighted deviation: the
+    # compound deduction is already capped, exactly as the boolean count was.
+    assert (three.score - two.score) == -round(0.30 * 60)
+
+
+# --- Data-quality prompts --------------------------------------------------- #
+def test_signal_quality_names_each_state():
+    fresh = trend_for([32.0, 32.0, 31.8])
+    assert signal_quality(None, CHECKIN_DAY) == "none"
+    assert signal_quality(trend_for([30.0]), CHECKIN_DAY) == "none"
+    assert signal_quality(trend_for([32.0, 32.0, 3.2]), CHECKIN_DAY) == "unreliable"
+    assert signal_quality(fresh, _at(1).timestamp) == "ok"
+    assert signal_quality(fresh, _at(FRESH_WEEKS + 1).timestamp) == "stale"
+
+
+def test_stale_weight_prompts_a_reweigh_and_lowers_confidence():
+    trend = trend_for([32.0, 32.0, 31.8])
+    pet = make_pet()
+    r = process_checkin(pet, make_history(pet.pet_id, 6), _at(FRESH_WEEKS + 2),
+                        weight_trend=trend)
+    assert WEIGHT_STALE_DRIVER in r.drivers
+    assert "fresh weigh-in" in r.explanation
+    assert r.confidence == "moderate"
+
+
+def test_fresh_weight_prompts_nothing():
+    trend = trend_for([32.0, 32.0, 31.8])
+    pet = make_pet()
+    r = process_checkin(pet, make_history(pet.pet_id, 6), _at(1), weight_trend=trend)
+    assert WEIGHT_STALE_DRIVER not in r.drivers
+    assert r.confidence == "high"
+
+
+def test_implausible_entry_asks_the_owner_to_recheck_it():
+    trend = trend_for([32.0, 32.0, 3.2])
+    r = score_with(trend)
+    assert trend.status == "implausible"
+    assert WEIGHT_RECHECK_DRIVER in r.drivers
+    assert "re-enter it" in r.explanation
+
+
+def test_a_data_quality_prompt_is_not_a_wellbeing_driver():
+    trend = trend_for([32.0, 32.0, 3.2])
+    r = score_with(trend)
+    # Nothing about the PET moved, so the "nothing changed" line must survive...
+    assert NO_DRIVERS in r.drivers
+    # ...and the prompt must not be read back as a deviation from baseline.
+    for driver in DATA_QUALITY_DRIVERS:
+        assert ("though %s" % driver) not in r.explanation
+    _assert_no_disease_terms(r.explanation)
+
+
+def test_stale_prompt_does_not_repeat_the_reading_date():
+    trend = trend_for([32.0, 32.0, 29.4])
+    pet = make_pet()
+    r = process_checkin(pet, make_history(pet.pet_id, 6), _at(FRESH_WEEKS + 2),
+                        weight_trend=trend)
+    assert r.explanation.count(trend.as_of.strftime("%d %b %Y")) == 1
+
+
+# --- Rate anchoring and the underweight profile ---------------------------- #
+def test_rate_anchors_on_a_reading_at_least_min_span_old():
+    # A monthly log, then the owner re-weighs three days later on other scales.
+    readings = [
+        WeightReading(32.0, date(2026, 4, 3)),
+        WeightReading(32.0, date(2026, 5, 1)),
+        WeightReading(32.0, date(2026, 5, 29)),
+        WeightReading(31.0, date(2026, 6, 1)),
+    ]
+    trend = compute_weight_trend(readings, species="dog", breed="Labrador",
+                                 sex="male", birth_date=date(2020, 1, 1))
+    assert trend.weeks_span > MIN_SPAN_WEEKS
+    # Measuring a 3.1% change over a floored 2 weeks would report ~6.25%/4w.
+    assert trend.rate_per_4w < 4.0
+
+
+def test_below_reference_shifts_appetite_and_stays_normalised():
+    pet = make_pet()
+    under = trend_for([22.0, 22.0])
+    assert under.body_status == "below_reference"
+
+    plain = VitalityScoreEngine(pet, make_history(pet.pet_id, 4))._select_weights()
+    shifted = VitalityScoreEngine(
+        pet, make_history(pet.pet_id, 4), weight_trend=under)._select_weights()
+
+    assert shifted.appetite > plain.appetite
+    total = shifted.appetite + shifted.energy + shifted.sleep + shifted.activity
+    assert abs(total - 1.0) < 1e-9
+    # An appetite drop therefore costs an underweight pet more.
+    assert score_with(under, appetite_score=3).score < \
+           score_with(None, appetite_score=3).score
 
 
 # --------------------------------------------------------------------------- #

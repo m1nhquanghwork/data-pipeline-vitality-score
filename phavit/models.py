@@ -66,7 +66,10 @@ class CheckInData:
     pain_or_discomfort_signs: bool = False
 
     # --- Optional context (NOT direct health-score drivers) ---
-    weight_kg: Optional[float] = None            # weight changes may later be a signal
+    # Optional and usually absent - owners weigh roughly monthly, not weekly.
+    # weight.readings_from_checkins() is the ONLY reader of this field; it turns
+    # the recorded weights into the WeightReading log the weight subsystem runs on.
+    weight_kg: Optional[float] = None
     owner_concern_level: Optional[int] = None    # 1-5 owner subjective worry, advisory only
 
 
@@ -128,6 +131,8 @@ class WeightTrendResult:
     is_growing: bool = False           # under the breed's adult age - growth expected
     managed: bool = False              # loss is within a recorded weight plan
     tier: Optional[str] = None         # "urgent" | "monitor" | None (trend-only rules)
+    # Internal diagnostics (which readings were rejected and why). Carried for
+    # support and debugging - never rendered into owner-facing copy.
     notes: List[str] = field(default_factory=list)
 
 
