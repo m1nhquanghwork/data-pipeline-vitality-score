@@ -1,4 +1,4 @@
-reada# PawHealthAI - Vitality Score Engine v0.2
+# PawHealthAI - Vitality Score Engine v0.2
 
 **Technical report for veterinary and engineering review**
 Status: *Provisional - not clinically validated*
@@ -36,10 +36,13 @@ superseded by the `phavit/` package; they remain in the repo for reference only.
 The engine now ships as an importable package rather than notebook-only code, so it
 can be called from the weekly check-in flow, unit-tested and later persisted:
 
-- `phavit/models.py` - typed dataclasses (`PetProfile`, `CheckInData`, `BaselineSummary`, `RedFlagResult`, `VitalityScoreResult`).
-- `phavit/red_flags.py` - Layer 2 safety net (`RedFlagEngine`, `EMERGENCY_SIGNS`).
-- `phavit/scoring.py` - Layer 1 wellbeing math (`VitalityScoreEngine`).
-- `phavit/pipeline.py` - orchestration entry point (`process_checkin`).
+- `phavit/models.py` - the shapes of the data the engine passes around: what a pet profile
+  holds, what a check-in holds, what a result holds (`PetProfile`, `CheckInData`,
+  `BaselineSummary`, `RedFlagResult`, `VitalityScoreResult`).
+- `phavit/red_flags.py` - Layer 2, the safety net (`RedFlagEngine`, `EMERGENCY_SIGNS`).
+- `phavit/scoring.py` - Layer 1, the 0-100 calculation (`VitalityScoreEngine`).
+- `phavit/pipeline.py` - the single front door that runs the two in the right order
+  (`process_checkin`). Nothing else should be called directly.
 
 The engine runs in two clearly separated layers, orchestrated by `process_checkin()`:
 
@@ -55,23 +58,87 @@ check-in ─▶ Layer 2: RedFlagEngine (safety net, runs FIRST)
 
 ### Layer 1 - Wellbeing score (baseline comparison)
 
-- Computes the pet's **own recent baseline** (mean appetite, energy, sleep, activity)
-  from history via `BaselineSummary`.
-- Scores **negative deviations** from that baseline, not fixed deductions. Only drops
-  reduce the score.
-- **Breed-aware weighting**: high-energy breeds (e.g. Vizsla, Border Collie) weight
-  activity more heavily (0.45 vs 0.20).
-- **Signal vs noise**: a single one-day dip is treated as noise; **multiple indicators
-  declining together** add an extra penalty.
-- **Honest uncertainty**: with fewer than 4 recent check-ins the engine returns a
-  `Building Baseline` state with low confidence rather than a fabricated score.
+- **Compares each pet only against themselves.** The baseline is the average of that
+  pet's own recent appetite, energy, sleep and activity - so a naturally sleepy cat is
+  not marked down for being a naturally sleepy cat.
+- **Only decline costs points.** Doing better than usual scores 0, not a bonus. There
+  are no fixed deductions for any particular value; what matters is the change.
+- **Breed-aware.** For high-energy breeds (Vizsla, Border Collie) activity carries far
+  more of the total importance - 45% rather than 20%.
+- **Signal vs noise.** One indicator dipping for a week is treated as ordinary
+  variation; two or more falling together takes an extra penalty.
+- **Honest about not knowing.** With fewer than 4 recent check-ins the engine reports
+  `Building Baseline` and shows no number at all, rather than inventing one from too
+  little history.
 - **Fourth-check-in unlock**: the total counts the *current* completed check-in, so
   the first score appears at 4 total (3 previous + current), not the 5th event.
   `process_checkin(pet, previous_checkins, current_checkin)` takes the two apart to
   keep that boundary unambiguous.
 
-**The equation.** With baseline means $\bar A,\bar E,\bar S,\bar M$ (appetite, energy,
-sleep, activity) over the last $n \ge 4$ check-ins, take **downward deviations only**:
+#### How the score is worked out
+
+Every pet starts the week on **100** and only ever loses points. There is no way to gain
+them back above 100, because the score measures decline against the pet's own normal, not
+performance against other pets.
+
+**Step 1 - Establish what is normal for this pet.**
+Average their last few check-ins for each of appetite, energy, sleep quality and activity
+minutes. Those four averages are the baseline. A cat who normally sleeps a lot has a high
+sleep baseline; nothing is compared against a species or breed average.
+
+**Step 2 - Compare this week, counting only what went down.**
+If appetite was normally 4 and is 3 this week, that is a drop of 1. If it went *up*,
+that counts as 0, not as a bonus. Activity is handled as a percentage rather than a count,
+because "20 minutes less" means something very different for a Greyhound than a Pug.
+
+**Step 3 - Decide how much each drop matters.**
+The four indicators share 100% of the importance between them. For a typical pet that is
+appetite 30%, energy 30%, sleep 20%, activity 20%. For a high-energy breed more of that
+100% shifts onto activity. The shares always total 100%, which is what makes the two
+profiles comparable to each other.
+
+**Step 4 - Turn the drops into points.**
+A pet who collapsed all the way to the bottom on every indicator at once would lose **60
+points** from this step. Everything smaller is proportional. So a one-point appetite drop
+for a typical pet costs 30% of 60 = **18 points**.
+
+**Step 5 - Add a penalty if several things fall together.**
+If two or more indicators dropped meaningfully in the same week, take a further **12
+points**. Two things sliding at once is more meaningful than either alone - this is the
+"signal versus noise" rule, and it is the one place the engine treats the whole as more
+than the sum of the parts.
+
+**Step 6 - Apply the care nudge.**
+Take **8 points** if worming is overdue. This is a care-compliance prompt, not a health
+measurement, and §8.2 question 8 asks whether it belongs in this score at all.
+
+**Step 7 - Round, and clamp to the 0-100 range.**
+Then read off the band: **Bright Green ≥85 · Medium Green ≥70 · Watch ≥50 · Action Needed
+<50** (all provisional).
+
+**Worked example.** A Labrador whose normal is appetite 4, energy 4, sleep 4, and 60
+minutes of activity. This week appetite and energy are both 3, sleep and activity unchanged.
+
+| Step | Working | Running score |
+|------|---------|:-------------:|
+| Start | | **100** |
+| Appetite down 1 of 5 | 30% share × 60 = 18 | 82 |
+| Energy down 1 of 5 | 30% share × 60 = 18 | 64 |
+| Sleep unchanged | nothing | 64 |
+| Activity unchanged | nothing | 64 |
+| Two indicators fell together | flat 12 | **52** |
+
+**52 - Watch.** Had appetite alone dropped, the pet would have finished on 82 (Medium
+Green). The second indicator is what moves them a whole band, which is the intended
+behaviour and the thing §8.2 question 4 asks you to sanity-check.
+
+#### Formal notation
+
+> **Engineering reference — skip this block unless you are implementing the engine.**
+> It restates steps 1-7 above exactly and adds nothing to them.
+
+With baseline means $\bar A,\bar E,\bar S,\bar M$ (appetite, energy, sleep, activity)
+over the last $n \ge 4$ check-ins, take **downward deviations only**:
 
 $$\Delta a=\max(0,\bar A-a),\quad \Delta e=\max(0,\bar E-e),\quad \Delta s=\max(0,\bar S-s),\quad \Delta m=\max\!\Big(0,\tfrac{\bar M-m}{\bar M}\Big)$$
 
@@ -89,7 +156,6 @@ $$S_2 = S_1 - 12\cdot\mathbb{1}[k\ge2], \qquad S_3 = S_2 - 8\cdot\mathbb{1}[\tex
 
 $$\text{score} = \max\!\big(0,\ \min(100,\ \operatorname{round}(S_3))\big)$$
 
-Bands (provisional): Bright Green ≥85 · Medium Green ≥70 · Watch ≥50 · Action Needed <50.
 
 ### Layer 2 - Red-flag override (three tiers)
 
@@ -105,10 +171,16 @@ good vitals.
 
 ### Removal of diagnostic outputs
 
-The prototype's `potential_diseases` field is **deleted**. Escalations now carry only
-safe, internal fields: `trigger`, `severity_tier`, `clinical_reason_for_escalation`,
-`recommended_user_pathway`, `vet_validation_required`. A guard test in the notebook
-asserts no disease term ever appears in a user-facing explanation.
+The earlier prototype attempted to list possible conditions a pet might have. That
+capability has been **removed entirely**, not hidden or disabled - the engine can no
+longer produce a disease name because it no longer has anywhere to put one.
+
+What replaces it is a record of *why we escalated and what the owner should do*, never
+what we think is wrong: `trigger` (a short internal label), `severity_tier`,
+`clinical_reason_for_escalation` (describing the reported sign, not a cause),
+`recommended_user_pathway`, and `vet_validation_required`. An automated test checks every
+message the engine can produce against a list of condition names and fails the build if
+one ever appears.
 
 ## 4. Explanation layer
 
@@ -153,12 +225,15 @@ user-facing explanation across every scenario and fixture.
 
 ## 6. Assumptions
 
-- Wellbeing inputs are self-reported on a 1-5 scale and treated as comparable over time.
-- Four or more recent check-ins are enough to estimate a "normal" baseline.
-- Weights, the 60-point deviation constant, band cut-offs and the look-back window
-  (3 check-ins for "repeated" patterns) are **engineering placeholders**.
-- Owner concern level and check-in consistency are engagement signals and are **not**
-  treated as direct health evidence.
+- Owners rate appetite, energy and sleep on a 1-5 scale, and we assume one owner's "3"
+  this week means the same as their "3" last week. We do **not** assume one owner's 3
+  means the same as another owner's 3.
+- Four or more recent check-ins are enough to establish what is normal for a pet.
+- The importance shares, the 60-point figure for a total collapse, the band cut-offs and
+  the three-check-in look-back for "repeated" signs are all **numbers we picked**, not
+  numbers derived from evidence. §8 exists to change them.
+- How worried the owner says they are, and how consistently they check in, are treated as
+  engagement signals only - **never** as evidence about the pet's health.
 
 ## 7. Limitations
 
@@ -181,11 +256,17 @@ user-facing explanation across every scenario and fixture.
 
 ### 8.2 The weighting mechanic (focus of this review)
 
-The score starts at 100 and only ever subtracts for **downward** deviations from the
-pet's own baseline. Two things decide how much a given change costs: the **weight** of
-that indicator (its relative importance) and the shared **deviation constant** `D = 60`
-(how many points a full deviation can remove). The weights within each breed profile
-sum to 1.0, so the profiles are directly comparable.
+The score starts at 100 and only ever subtracts, and only for changes in the *downward*
+direction. Two things decide what a given change costs:
+
+1. **How much that indicator matters** relative to the other three, expressed as a share
+   of 100%.
+2. **How much a total collapse would cost** - set at 60 points, and shared out between
+   the four indicators according to (1).
+
+The shares always add to 100% within a profile, which is what lets the two breed profiles
+be compared to one another. This is the same calculation described step by step in §3
+"How the score is worked out"; below it is restated as plain point costs.
 
 **Current weights (provisional placeholders):**
 
@@ -196,10 +277,16 @@ sum to 1.0, so the profiles are directly comparable.
 | Sleep     | 0.20 | 0.10 |
 | Activity  | 0.20 | 0.45 |
 
-Because the abstract weights are hard to judge clinically, here is what they mean in
-**practice** — points removed from the 0-100 score, so the relative severity is visible
-without doing the maths. Appetite/energy/sleep are 1-5 scales; activity is compared as a
-percentage of the baseline minutes.
+Percentage shares are hard to judge clinically, so **this is the table to review** - the
+same weights expressed as points removed from the 0-100 score. Nothing here needs working
+out; the numbers are what an owner would actually see happen. Appetite, energy and sleep
+are 1-5 scales, so "down 1 point" means something like 4→3. Activity is compared as a
+percentage of the pet's usual minutes.
+
+*(These are the figures with no body-condition adjustment applied. A pet recorded as above
+or below their breed's healthy weight range shifts the shares somewhat - see
+`PawHealthAI_Vitality_Score.md` §6, which the weight subsystem added after this table was
+written.)*
 
 | Change | Normal breed | High-energy breed |
 |--------|:------------:|:-----------------:|
