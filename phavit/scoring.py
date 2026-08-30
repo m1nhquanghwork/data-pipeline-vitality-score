@@ -323,8 +323,8 @@ class VitalityScoreEngine:
         """
         if weight_quality == "unreliable":
             return (
-                " The most recent weight entry looks unusual, so it has not been used "
-                "here - please check it and re-enter it if it was a typo."
+                """
+                The most recent weight entry looks unusual, so it has not been used here - please check it and re-enter it if it was a typo."""
             )
         if weight_quality == "stale":
             trend = self.weight_trend
