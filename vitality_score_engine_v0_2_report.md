@@ -25,7 +25,7 @@ their pet is healthy or sick.
 | `test_case/*.json` | **30 check-in fixtures**, each declaring its own expected band, tier and weight outcome. Ten are weight scenarios (`Weight_*.json`). |
 | `test_case/README.md` | How to run the suite and how to add to it, for engineers and reviewers. |
 | `conftest.py` / `test_case/conftest.py` | Put the repo root on `sys.path` so the tests resolve `phavit` from either directory. |
-| `data_pipeline_vitality_score_v2.ipynb` | Runnable walkthrough of all three layers and the weight subsystem, ending with the fixture harness. **Imports `phavit/` rather than redefining the engine**, so it cannot drift out of step with the code under test. |
+| `data_pipeline_vitality_score_v2.ipynb` | Runnable notebook: engine walkthrough plus the fixture loader. |
 | `PawHealthAI_Vitality_Score.md` | Product-level overview of the Vitality Score. |
 | `vitality_score_engine_v0_2_report.md` / `.docx` | This report (Markdown source and exported Word copy). |
 
@@ -114,7 +114,7 @@ because a growing animal losing weight matters more. A pet on a recorded
   activity more heavily (0.45 vs 0.20).
 - **Body-aware weighting**: where a pet sits against its breed weight reference shifts
   emphasis between indicators. See "Weighting profiles" below.
-- **Weight loss deducts points directly**, on a ramp, and fades as the reading ages.
+- **Unusual weight deducts points directly**, on a ramp, and fades as the reading ages.
 - **Signal vs noise**: a single one-day dip is treated as noise; **multiple indicators
   declining together** add an extra penalty, and weight counts towards that tally.
 - **Honest uncertainty**: with fewer than 4 recent check-ins the engine returns a
@@ -145,22 +145,17 @@ pets.
 4. **Convert drops into points lost.** Multiply each weighted drop by 60, the constant
    that sets how harsh the engine is overall. A one-point appetite drop for a normal-breed
    dog costs 0.30 × 60 = **18 points**.
-5. **Subtract for weight loss.** If a recent weigh-in shows the pet losing body weight,
-   subtract points on a sliding scale: nothing below 2% per 4 weeks, rising steadily to a
-   maximum of 15 points at 10% per 4 weeks. Past 10% the safety net takes over instead, so
-   the deduction stops growing.
+5. **Subtract for weight radical change.** If a recent weigh-in shows the pet unusual 
+   body weight different, subtract points on a sliding scale: nothing below 2% per 4 weeks, rising steadily to a maximum of 15 points at 10% per 4 weeks. Past 10% the safety net takes over instead, so the deduction stops growing.
 6. **Add a penalty when several things slip at once.** One indicator dipping is usually
    noise. Two or more at the same time is a pattern, and costs a further 12 points.
-   Weight counts as one of those indicators - but a *fractional* one, contributing less as
-   the weigh-in ages, so a fading signal tapers off instead of vanishing overnight.
+   Weight counts as one of those indicators - but a *fractional* one, contributing less as the weigh-in ages, so a fading signal tapers off instead of vanishing overnight.
 7. **Apply the care nudge.** Overdue worming removes a further 8 points.
 
 Round the result and clamp it to the 0-100 range. Bands (provisional):
 **Bright Green ≥85 · Medium Green ≥70 · Watch ≥50 · Action Needed <50.**
 
-**Worked example - Scout, a normal-breed Labrador.** Usual scores 4/4/4 and 60 minutes of
-activity. This week: appetite 3, energy 3, sleep 4, activity 60 minutes, and a weigh-in
-three weeks ago showing 6% body weight lost per 4 weeks.
+**Worked example - Scout, a normal-breed Labrador.** Usual scores 4/4/4 and 60 minutes of activity. This week: appetite 3, energy 3, sleep 4, activity 60 minutes, and a weigh-in three weeks ago showing 6% body weight lost per 4 weeks.
 
 | Step | What happened | Points | Running total |
 |------|---------------|:------:|:-------------:|
@@ -174,9 +169,7 @@ three weeks ago showing 6% body weight lost per 4 weeks.
 | Worming | up to date | 0 | 44.5 |
 | **Final** | rounds to **44** - *Action Needed* | | **44** |
 
-Scout's individual signs are each mild, but three of them moved the same way at once, and
-that is what drops him two bands. This is the behaviour the engine is designed to produce:
-no single reading is alarming, the combination is.
+Scout's individual signs are each mild, but three of them moved the same way at once, and that is what drops him two bands. This is the behaviour the engine is designed to produce no single reading is alarming, the combination is.
 
 *(A note on that last step: 44.5 rounds to 44, not 45. Python rounds a value sitting
 exactly halfway to the nearest **even** number, so scores landing on a .5 boundary go down

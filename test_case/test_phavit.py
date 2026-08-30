@@ -36,11 +36,20 @@ from typing import List
 # repo root on sys.path. Under pytest the root conftest.py already handles this.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from phavit.models import CheckInData, PetProfile, VitalityScoreResult, WeightReading
+from phavit.models import (
+    CheckInData,
+    PetProfile,
+    VitalityScoreResult,
+    WeightReading,
+    WeightTrendResult,
+)
 from phavit.pipeline import process_checkin
 from phavit.red_flags import EMERGENCY_SIGNS
 from phavit.scoring import (
+    ADVERSE_TREND_EMPHASIS,
     BASE_PROFILES,
+    BODY_STATUS_ACTIVITY_BUMP,
+    BODY_STATUS_WEIGHT_CAP,
     DATA_QUALITY_DRIVERS,
     NO_DRIVERS,
     VitalityScoreEngine,
@@ -49,6 +58,7 @@ from phavit.scoring import (
 )
 from phavit.weight import (
     FRESH_WEEKS,
+    MAX_WEIGHT_PENALTY,
     MIN_SPAN_WEEKS,
     compute_weight_trend,
     declining_strength,
@@ -616,13 +626,80 @@ def test_loss_with_low_appetite_escalates_even_when_not_repeated():
     _assert_no_disease_terms(r.explanation)
 
 
-def test_rapid_gain_is_advisory_not_a_deduction():
+def test_rapid_gain_deducts_and_carries_the_advisory():
     trend = trend_for([30.0, 30.0, 30.0, 33.0])          # ~10% up
     r = score_with(trend)
     assert r.score is not None                            # score preserved
+    assert r.score < 100                                  # but gain now costs points
     assert r.override is not None and r.override.severity_tier == "monitor"
     assert r.override.trigger == "rapid_weight_gain"
+    # The driver must name the direction the pet actually moved.
+    assert any("weight above usual" in d for d in r.drivers)
     assert not any("weight below usual" in d for d in r.drivers)
+
+
+def test_gain_and_loss_of_the_same_size_cost_the_same():
+    """
+    The symmetry that makes the deduction defensible: the ramp is driven by rate,
+    not direction, so 5% off and 5% on are the same number of points. Checked at
+    several sizes rather than one, because a single pair would also pass if both
+    directions were pinned to the cap.
+    """
+    for down, up in ((29.1, 30.9), (28.5, 31.5), (27.6, 32.4)):
+        lost = weight_penalty(trend_for([30.0, 30.0, 30.0, down]), CHECKIN_DAY)
+        gained = weight_penalty(trend_for([30.0, 30.0, 30.0, up]), CHECKIN_DAY)
+        assert lost > 0
+        assert abs(gained - lost) < 1e-9, f"{down} vs {up}: {gained} != {lost}"
+
+
+def test_gain_penalty_is_monotonic_and_caps():
+    points = [
+        weight_penalty(trend_for([30.0, 30.0, 30.0, kg]), CHECKIN_DAY)
+        for kg in (30.5, 31.0, 31.5, 32.0, 33.0)
+    ]
+    assert points == sorted(points)
+    at_line = weight_penalty(trend_for([30.0, 30.0, 30.0, 33.0]), CHECKIN_DAY)   # 10%
+    far_past = weight_penalty(trend_for([30.0, 30.0, 30.0, 36.0]), CHECKIN_DAY)  # 20%
+    assert at_line == far_past == MAX_WEIGHT_PENALTY
+
+
+def test_small_gain_is_absorbed_by_the_noise_floor():
+    """The same floor that protects loss must protect gain, or every full
+    water bowl becomes a deduction."""
+    trend = trend_for([30.0, 30.0, 30.0, 30.45])          # ~1.5% up
+    assert trend.direction == "stable"
+    assert weight_penalty(trend, CHECKIN_DAY) == 0.0
+
+
+def test_growing_puppy_gain_is_never_deducted():
+    puppy_birth = date(2026, 2, 1)
+    trend = trend_for([12.0, 12.0, 12.0, 13.5], birth_date=puppy_birth)   # ~12.5% up
+    assert trend.is_growing
+    assert weight_penalty(trend, CHECKIN_DAY) == 0.0
+
+
+def test_underweight_pet_regaining_is_not_penalised():
+    """
+    Recovery is not decline. A pet below their breed reference putting weight
+    back on must not lose points for it, and must not be told to cut portions -
+    both layers have to agree that this gain is the problem resolving.
+    """
+    trend = trend_for([7.5, 7.5, 7.5, 8.4], breed="Beagle")   # ~12% up, still under
+    assert trend.direction == "gain"
+    assert trend.body_status == "below_reference"
+    assert weight_penalty(trend, CHECKIN_DAY) == 0.0
+    assert trend.tier is None
+    assert score_with(trend).score == 100
+
+
+def test_gain_does_not_join_the_declining_tally():
+    """
+    Gain deducts, but it is not a DECLINING indicator - the compound rule is
+    about several signs falling together. Letting gain in would have it read as
+    corroborating a fall in appetite it has nothing to do with.
+    """
+    trend = trend_for([30.0, 30.0, 30.0, 33.0])          # ~10% up
+    assert declining_strength(trend, CHECKIN_DAY) == 0.0
 
 
 def test_growing_puppy_gain_is_not_flagged():
@@ -686,6 +763,145 @@ def test_above_reference_amplifies_an_activity_drop():
 def test_unknown_breed_has_no_reference():
     trend = trend_for([30.0, 30.0, 30.0, 30.0], breed="Labrador cross")
     assert trend.body_status == "no_reference"
+
+
+# --------------------------------------------------------------------------- #
+# 14b. Weight: the profile's weight-ramp cap                                   #
+# --------------------------------------------------------------------------- #
+def fake_trend_at(rate, direction="loss", body_status="in_reference"):
+    """A hand-built trend at an exact rate, for arithmetic that does not need
+    real readings to get there."""
+    return WeightTrendResult(
+        status="ok", direction=direction, pct_change=rate, rate_per_4w=rate,
+        baseline_kg=32.0, current_kg=30.0, as_of=LAST_WEIGH_IN,
+        body_status=body_status,
+    )
+
+
+def _weights_for(body_status, direction, rate, at=CHECKIN_DAY):
+    """The profile a pet at this body status and trend direction would get."""
+    trend = fake_trend_at(rate, direction=direction, body_status=body_status)
+    return VitalityScoreEngine(make_pet(), [], weight_trend=trend)._select_weights(at)
+
+
+def test_cap_multiplier_follows_body_status():
+    """A pet outside their healthy range has more at stake in a weight move."""
+    assert _weights_for("in_reference", "stable", 0.0).weight_cap_multiplier == 1.0
+    assert _weights_for("no_reference", "stable", 0.0).weight_cap_multiplier == 1.0
+    for status, expected in BODY_STATUS_WEIGHT_CAP.items():
+        assert _weights_for(status, "stable", 0.0).weight_cap_multiplier == expected
+        assert expected > 1.0, status
+
+
+def test_taller_ramp_costs_more_for_the_same_loss():
+    """
+    The cap scales the deduction, so the same 6%/4wk loss costs an already-heavy
+    pet more than one sitting inside their range.
+    """
+    in_range = trend_for([32.0, 32.0, 32.0, 30.1])       # ~6%/4wk, in reference
+    heavy = trend_for([46.0, 46.0, 46.0, 43.2])          # ~6%/4wk, above reference
+    assert in_range.body_status == "in_reference"
+    assert heavy.body_status in ("above_reference", "well_above_reference")
+    assert abs(in_range.rate_per_4w - heavy.rate_per_4w) < 0.2
+
+    assert score_with(heavy).score < score_with(in_range).score
+
+
+def test_cap_does_not_move_the_escalation_boundaries():
+    """
+    A taller ramp must change only how many points a change costs, never where
+    the deduction starts or where it tops out. Otherwise the profile would be
+    quietly moving the red-flag thresholds around with it.
+    """
+    trend = trend_for([44.0, 44.0, 44.0, 44.0])          # heavy, but stable
+    tall = VitalityScoreEngine(make_pet(), [], weight_trend=trend)._select_weights(CHECKIN_DAY)
+    cap = MAX_WEIGHT_PENALTY * tall.weight_cap_multiplier
+    assert cap > MAX_WEIGHT_PENALTY
+
+    # Still nothing at the noise floor, and still capped from the escalation line on.
+    at_floor = fake_trend_at(2.0)
+    assert weight_penalty(at_floor, CHECKIN_DAY, cap=cap) == 0.0
+    at_line = weight_penalty(fake_trend_at(10.0), CHECKIN_DAY, cap=cap)
+    far_past = weight_penalty(fake_trend_at(20.0), CHECKIN_DAY, cap=cap)
+    assert at_line == far_past == cap
+
+
+def test_default_cap_is_unchanged_for_callers_that_pass_none():
+    """weight.py must stay usable without knowing profiles exist."""
+    trend = fake_trend_at(10.0)
+    assert weight_penalty(trend, CHECKIN_DAY) == MAX_WEIGHT_PENALTY
+
+
+# --------------------------------------------------------------------------- #
+# 14c. Weight: trend direction amplifies the emphasis                          #
+# --------------------------------------------------------------------------- #
+def test_adverse_direction_leans_further_on_the_lever():
+    """
+    Above their range and still gaining, or below it and still losing, the pet is
+    moving away from their healthy range, so the indicator that is the owner's
+    lever counts for more.
+    """
+    holding = _weights_for("above_reference", "stable", 0.0)
+    worsening = _weights_for("above_reference", "gain", -6.0)
+    assert worsening.activity > holding.activity
+
+    holding_thin = _weights_for("below_reference", "stable", 0.0)
+    worsening_thin = _weights_for("below_reference", "loss", 6.0)
+    assert worsening_thin.appetite > holding_thin.appetite
+
+
+def test_favourable_direction_keeps_the_base_emphasis():
+    """
+    Moving back towards the healthy range is the situation resolving. It must not
+    lean harder on an owner already fixing it - and equally must not ease off the
+    indicator doing the fixing, so the profile matches the stable case exactly.
+    """
+    holding = _weights_for("above_reference", "stable", 0.0)
+    slimming = _weights_for("above_reference", "loss", 6.0)
+    assert slimming == holding
+
+    holding_thin = _weights_for("below_reference", "stable", 0.0)
+    regaining = _weights_for("below_reference", "gain", -6.0)
+    assert regaining == holding_thin
+
+
+def test_amplified_profiles_still_sum_to_one():
+    """The renormalisation has to survive the larger bump too."""
+    for status in ("above_reference", "well_above_reference"):
+        w = _weights_for(status, "gain", -6.0)
+        total = w.appetite + w.energy + w.sleep + w.activity
+        assert abs(total - 1.0) < 1e-9, status
+    w = _weights_for("below_reference", "loss", 6.0)
+    assert abs(w.appetite + w.energy + w.sleep + w.activity - 1.0) < 1e-9
+
+
+def test_a_decayed_trend_no_longer_steers_the_emphasis():
+    """
+    A weight signal that has faded to nothing must not go on deciding which
+    indicators matter. Its deduction is already zero by then; the emphasis has
+    to expire with it.
+    """
+    fresh = _weights_for("above_reference", "gain", -6.0, at=CHECKIN_DAY)
+    long_stale = _weights_for(
+        "above_reference", "gain", -6.0,
+        at=datetime.combine(LAST_WEIGH_IN, datetime.min.time()) + timedelta(weeks=16),
+    )
+    assert fresh.activity > long_stale.activity
+    assert long_stale == _weights_for("above_reference", "stable", 0.0)
+
+
+def test_emphasis_multiplier_is_the_single_dial():
+    """The amplified bump is exactly the base bump times the constant."""
+    base = _weights_for("well_above_reference", "stable", 0.0)
+    amplified = _weights_for("well_above_reference", "gain", -6.0)
+    profile = BASE_PROFILES["standard"]
+    base_bump = BODY_STATUS_ACTIVITY_BUMP["well_above_reference"]
+
+    # Rebuild both profiles by hand: bump activity, then renormalise, and check
+    # the engine landed on the same numbers.
+    for bump, got in ((base_bump, base), (base_bump * ADVERSE_TREND_EMPHASIS, amplified)):
+        raw_total = 1.0 + bump
+        assert abs(got.activity - (profile.activity + bump) / raw_total) < 1e-9
 
 
 # --------------------------------------------------------------------------- #

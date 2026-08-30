@@ -1,14 +1,14 @@
 {
-  "scenario": "Adult dog up about 10% in a month. Gain is scored on the same ramp as loss, so this costs the full 15 points - the same as a 10% loss would - and attaches a monitor advisory. The score is still shown: gain deducts, it does not suppress.",
+  "scenario": "Underweight beagle putting weight back on after illness - up about 12% in a month, but still below the healthy range for the breed. Gain normally deducts on the same ramp as loss, but recovery is the exception: a pet climbing back towards their reference range must not lose points for it, and must not be told to review portions and treats. Both the score and the safety net stay silent.",
 
   "pet_profile": {
-    "pet_id": "pet_200005",
-    "pet_name": "Maple",
+    "pet_id": "pet_200011",
+    "pet_name": "Pip",
     "species": "dog",
-    "breed": "Labrador",
+    "breed": "Beagle",
     "sex": "male",
     "postcode": "3000",
-    "birth_date": "2021-11-02",
+    "birth_date": "2020-03-14",
     "is_high_energy": false,
     "worming_compliant": true,
     "vaccination_current": true,
@@ -17,15 +17,15 @@
 
   "weight_log": {
     "readings": [
-      { "kg": 30.0, "at": "2026-04-27" },
-      { "kg": 30.0, "at": "2026-05-25" },
-      { "kg": 30.0, "at": "2026-06-22" },
-      { "kg": 33.0, "at": "2026-07-20" }
+      { "kg": 7.5, "at": "2026-04-27" },
+      { "kg": 7.5, "at": "2026-05-25" },
+      { "kg": 7.5, "at": "2026-06-22" },
+      { "kg": 8.4, "at": "2026-07-20" }
     ]
   },
 
   "check_in_data": {
-    "pet_id": "pet_200005",
+    "pet_id": "pet_200011",
     "timestamp": "2026-07-21T09:00:00Z",
 
     "appetite_score": 4,
@@ -48,18 +48,18 @@
     "tick_found": false,
     "pain_or_discomfort_signs": false,
 
-    "weight_kg": 33.0,
-    "owner_concern_level": 2
+    "weight_kg": 8.4,
+    "owner_concern_level": 1
   },
 
   "expected": {
     "band": "Bright Green",
     "score_present": true,
-    "override_tier": "monitor",
-    "override_trigger": "rapid_weight_gain",
-    "score": 85,
+    "score": 100,
+    "override_tier": null,
     "weight_status": "ok",
     "weight_direction": "gain",
-    "drivers_include": ["weight above usual"]
+    "weight_body_status": "below_reference",
+    "weight_is_growing": false
   }
 }

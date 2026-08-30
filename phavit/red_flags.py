@@ -170,8 +170,9 @@ class RedFlagEngine:
                 True,
             )
 
-        # Rapid weight gain in an adult. Advisory only - never a score deduction,
-        # and suppressed entirely while a pet is still growing.
+        # Rapid weight gain in an adult. The score deduction is applied by
+        # scoring.py on the same ramp as loss; this is the advisory that goes
+        # with it. Suppressed entirely while a pet is still growing.
         if (
             wt is not None
             and wt.tier == "monitor"

@@ -41,11 +41,26 @@ NOTABLE_LOSS_PCT = 5.0
 # Roughly the conventional "this needs a vet" line for unintentional loss.
 URGENT_LOSS_PCT = 10.0
 
-# Rapid gain in an adult: advisory only, never a score deduction.
+# Rapid gain in an adult. Attaches a monitor advisory, and - like loss - ramps
+# into a score deduction; see weight_penalty().
 MONITOR_GAIN_PCT = 8.0
 
-# Most points a weight loss can remove from the 0-100 score. The cap sits at
-# URGENT_LOSS_PCT because beyond that the red-flag layer takes over anyway.
+# Where a gain reaches the full deduction. Set equal to URGENT_LOSS_PCT so a
+# change of the same size costs the same points whichever way it went. Kept as
+# its own constant rather than reusing the loss line, because whether the two
+# directions deserve equal weight is a clinical judgement, not an arithmetic
+# one: if review decides rapid gain should count for less than rapid loss,
+# raising this number is the whole change.
+URGENT_GAIN_PCT = 10.0
+
+# Most points a weight change can remove from the 0-100 score, for a pet sitting
+# inside their breed reference range. The cap sits at the escalation line in
+# either direction, because beyond that the red-flag layer takes over anyway.
+#
+# scoring.py scales this per weighting profile - a pet already outside their
+# healthy range has more at stake in a weight move than one comfortably inside
+# it - by passing its own `cap` below. This module holds the shape of the ramp;
+# the profile decides how tall it is.
 MAX_WEIGHT_PENALTY = 15.0
 
 # Staleness: full effect up to FRESH_WEEKS, fading linearly to nothing at
@@ -420,7 +435,17 @@ def compute_weight_trend(
     tier = None
     if direction == "loss" and not managed and rate >= urgent_at:
         tier = "urgent"
-    elif direction == "gain" and not is_growing and abs(rate) >= MONITOR_GAIN_PCT:
+    elif (
+        direction == "gain"
+        and not is_growing
+        and status_label != "below_reference"
+        and abs(rate) >= MONITOR_GAIN_PCT
+    ):
+        # Suppressed for a pet below their breed reference for the same reason
+        # weight_penalty() is: they are regaining. Telling the owner of an
+        # underweight pet to review portions and treats would be worse advice
+        # than saying nothing, and the two layers must not disagree about
+        # whether the gain is a problem.
         tier = "monitor"
 
     return WeightTrendResult(
@@ -488,24 +513,60 @@ def staleness_factor(trend: Optional[WeightTrendResult], at) -> float:
     return (STALE_WEEKS - weeks) / (STALE_WEEKS - FRESH_WEEKS)
 
 
-def weight_penalty(trend: Optional[WeightTrendResult], at) -> float:
+def weight_penalty(
+    trend: Optional[WeightTrendResult],
+    at,
+    cap: Optional[float] = None,
+) -> float:
     """
-    Points removed from the 0-100 score for weight loss. Zero unless there is a
-    usable, fresh, unmanaged downward trend past the noise floor.
+    Points removed from the 0-100 score for a weight change in EITHER direction.
+    Zero unless there is a usable, fresh, unsuppressed trend past the noise floor.
 
-    Ramps linearly from NOISE_FLOOR_PCT (0 points) to URGENT_LOSS_PCT
-    (MAX_WEIGHT_PENALTY), where the red-flag layer takes over instead.
+    Ramps linearly from NOISE_FLOOR_PCT (0 points) to the escalation line for
+    that direction (`cap`, defaulting to MAX_WEIGHT_PENALTY), where the red-flag
+    layer takes over. `cap` is how scoring.py applies a weighting profile's
+    `weight_cap_multiplier` without this module needing to know profiles exist -
+    it changes how tall the ramp is, never where it starts or tops out, so the
+    escalation boundaries are untouched.
+    Because the ramp is driven by the RATE - percent of body weight per 4 weeks -
+    a gain and a loss of the same size cost the same points, and a fixed number
+    of kilos means what it should for the animal carrying them: 5kg off a beagle
+    is a collapse, 5kg off a Great Dane is a fortnight of wet weather.
+
+    Two suppressions apply to gain and have no equivalent for loss, because the
+    same number means something different when a pet is meant to be putting
+    weight on:
+
+      * growth - a puppy or kitten gaining is the intended outcome, and there is
+        no adult range to compare them against in the first place;
+      * recovery - a pet already below their breed reference regaining weight is
+        the problem resolving, not a new one. Deducting there would take points
+        off a pet for getting better, and would fall hardest on the pets that
+        had the furthest to come back.
     """
-    if trend is None or trend.status != "ok" or trend.direction != "loss":
+    if trend is None or trend.status != "ok":
         return 0.0
-    if trend.managed:
-        return 0.0
-    if trend.rate_per_4w <= NOISE_FLOOR_PCT:
+    if cap is None:
+        cap = MAX_WEIGHT_PENALTY
+
+    if trend.direction == "loss":
+        if trend.managed:
+            return 0.0
+        rate, escalation_at = trend.rate_per_4w, URGENT_LOSS_PCT
+    elif trend.direction == "gain":
+        if trend.is_growing or trend.body_status == "below_reference":
+            return 0.0
+        # rate_per_4w is signed - negative for gain - so take the magnitude.
+        rate, escalation_at = abs(trend.rate_per_4w), URGENT_GAIN_PCT
+    else:
         return 0.0
 
-    span = URGENT_LOSS_PCT - NOISE_FLOOR_PCT
-    ramp = min(1.0, (trend.rate_per_4w - NOISE_FLOOR_PCT) / span)
-    return ramp * MAX_WEIGHT_PENALTY * staleness_factor(trend, at)
+    if rate <= NOISE_FLOOR_PCT:
+        return 0.0
+
+    span = escalation_at - NOISE_FLOOR_PCT
+    ramp = min(1.0, (rate - NOISE_FLOOR_PCT) / span)
+    return ramp * cap * staleness_factor(trend, at)
 
 
 def declining_strength(trend: Optional[WeightTrendResult], at) -> float:

@@ -1,6 +1,6 @@
 # `test_phavit.py` — how to run it and how to add to it
 
-The test suite for the PHAIVIT engine. **92 tests** covering the scoring math, the red-flag safety net, the weight subsystem and the plain-English explanation layer, plus **30 JSON scenarios** that a vet or product reviewer can read and check without opening any Python.
+The test suite for the PHAIVIT engine. **107 tests** covering the scoring math, the red-flag safety net, the weight subsystem and the plain-English explanation layer, plus **31 JSON scenarios** that a vet or product reviewer can read and check without opening any Python.
 
 Everything lives in one file on purpose. The three layers are only meaningful together — a change to the weight thresholds can move a red-flag tier, which changes which band the owner sees — so splitting the suite would hide exactly the interactions worth testing.
 
@@ -27,7 +27,7 @@ python test_case/test_phavit.py
 ```
   PASS  test_a_supplied_trend_takes_precedence_over_the_checkin_stream
   ...
-92/92 passed
+107/107 passed
 ```
 
 It exits non-zero on failure, so it drops straight into CI.
@@ -37,7 +37,7 @@ It exits non-zero on failure, so it drops straight into CI.
 | Command | What it does |
 | --- | --- |
 | `python -m pytest test_case/test_phavit.py -q` | The whole suite, quiet |
-| `python -m pytest test_case/test_phavit.py -k weight -q` | Just the weight tests (17 of them) |
+| `python -m pytest test_case/test_phavit.py -k weight -q` | Just the weight tests (18 of them) |
 | `python -m pytest test_case/test_phavit.py -k "scenario or fixture" -q` | Just the JSON scenario checks |
 | `python -m pytest test_case/test_phavit.py::test_blank_weeks_hold_the_score_steady` | One named test |
 | `python -m pytest test_case/test_phavit.py -x --tb=short` | Stop at the first failure, short traceback |

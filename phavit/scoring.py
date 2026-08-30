@@ -16,7 +16,13 @@ from .models import (
     VitalityScoreResult,
     WeightTrendResult,
 )
-from .weight import declining_strength, signal_quality, weight_penalty
+from .weight import (
+    MAX_WEIGHT_PENALTY,
+    declining_strength,
+    signal_quality,
+    staleness_factor,
+    weight_penalty,
+)
 
 
 BAND_BRIGHT = 85
@@ -60,6 +66,31 @@ BODY_STATUS_APPETITE_BUMP = {
     "below_reference": 0.10,
 }
 
+# How far a weight move can move the score, as a multiple of MAX_WEIGHT_PENALTY,
+# for a pet at each body status. A pet already outside their healthy range has
+# more at stake in a weight move than one sitting comfortably inside it, so the
+# ramp is taller for them.
+#
+# This scales the ramp only. It does not touch where the deduction starts (2%/4wk)
+# or where it tops out (10%/4wk), so the red-flag escalation boundaries are the
+# same for every pet - only the number of points differs.
+BODY_STATUS_WEIGHT_CAP = {
+    "above_reference": 1.2,
+    "well_above_reference": 1.3,
+    "below_reference": 1.3,
+}
+
+# How much further the emphasis leans when the trend is moving the WRONG WAY for
+# the pet's body status - above their reference and still gaining, or below it
+# and still losing. In both cases the pet is moving away from their healthy
+# range, so the lever that matters for them is under more strain.
+#
+# Deliberately one-sided: a pet moving back TOWARDS their range keeps the base
+# emphasis rather than a reduced one. The situation is resolving, and there is
+# no case for leaning harder on an owner who is already fixing it - but nor is
+# there one for easing off the indicator that is doing the fixing.
+ADVERSE_TREND_EMPHASIS = 1.5
+
 # Most points the multiple-indicators-declining rule can remove.
 COMPOUND_DECLINE_DEDUCTION = 12.0
 
@@ -69,12 +100,20 @@ class Weights:
     """
     One breed-aware weighting profile. The four indicator weights always sum to
     1.0 so profiles stay directly comparable (report section 8.2).
+
+    `weight_cap_multiplier` is deliberately NOT one of those four and is not
+    renormalised with them. Body weight is not a fifth share of the same budget:
+    the four indicators split how much a behavioural change can cost, while the
+    weight ramp is a separate term added on top. Folding it into the sum would
+    have raised the weight of one profile by lowering the others, which is a
+    different claim from the one intended here.
     """
     appetite: float
     energy: float
     sleep: float
     activity: float
     activity_drop_threshold: float = ACTIVITY_DROP_THRESHOLD
+    weight_cap_multiplier: float = 1.0
 
     def normalised(self) -> "Weights":
         """
@@ -126,22 +165,53 @@ class VitalityScoreEngine:
         # exactly as it did before weight existed.
         self.weight_trend = weight_trend
 
-    def _select_weights(self) -> Weights:
+    def _select_weights(self, at=None) -> Weights:
         """
         Pick the weighting profile for this pet.
 
-        Breed energy level chooses the base profile; body weight relative to the
-        breed reference then shifts emphasis towards activity, because for a pet
-        carrying extra weight sustained low activity is both more consequential
-        and the lever an owner can actually pull.
+        Breed energy level chooses the base profile. Where the pet sits against
+        their breed reference then does two things: it shifts emphasis towards
+        the lever that matters for them - activity for a pet carrying extra
+        weight, since sustained low activity is both more consequential and the
+        thing an owner can actually pull, intake for a pet who is under their
+        range - and it sets how tall the weight ramp is via
+        `weight_cap_multiplier`.
+
+        Which WAY the weight is moving then amplifies the emphasis. A pet above
+        their reference and still gaining, or below it and still losing, is
+        moving away from their healthy range, so the lever leans further. A pet
+        moving back towards the range keeps the base emphasis.
+
+        The amplification is applied only while the reading is still fresh
+        enough to mean something: a signal that has decayed to nothing must not
+        go on steering which indicators matter. `at` is the current check-in
+        date; passing None skips the direction step entirely, which is what
+        callers that only want the base profile want.
         """
         profile = BASE_PROFILES["high_energy" if self.pet.is_high_energy else "standard"]
 
-        body_status = self.weight_trend.body_status if self.weight_trend else None
+        trend = self.weight_trend
+        body_status = trend.body_status if trend else None
         activity_bump = BODY_STATUS_ACTIVITY_BUMP.get(body_status, 0.0)
         appetite_bump = BODY_STATUS_APPETITE_BUMP.get(body_status, 0.0)
+        cap_multiplier = BODY_STATUS_WEIGHT_CAP.get(body_status, 1.0)
+
+        if (
+            at is not None
+            and trend is not None
+            and staleness_factor(trend, at) > 0.0
+            and (
+                (activity_bump and trend.direction == "gain")
+                or (appetite_bump and trend.direction == "loss")
+            )
+        ):
+            # Only ever one of the two is non-zero for a given body status, so
+            # scaling both is a no-op on the other.
+            activity_bump *= ADVERSE_TREND_EMPHASIS
+            appetite_bump *= ADVERSE_TREND_EMPHASIS
+
         if not activity_bump and not appetite_bump:
-            return profile
+            return replace(profile, weight_cap_multiplier=cap_multiplier)
 
         return replace(
             profile,
@@ -151,6 +221,7 @@ class VitalityScoreEngine:
                 ACTIVITY_DROP_THRESHOLD_HEAVY if activity_bump
                 else profile.activity_drop_threshold
             ),
+            weight_cap_multiplier=cap_multiplier,
         ).normalised()
 
     def calculate(self, current: CheckInData) -> VitalityScoreResult:
@@ -192,7 +263,7 @@ class VitalityScoreEngine:
 
         # Breed-aware weights (each set sums to 1.0), shifted towards activity when
         # the pet is above their breed weight reference.
-        w = self._select_weights()
+        w = self._select_weights(current.timestamp)
 
         score = 100.0
         drivers: List[str] = []
@@ -204,10 +275,16 @@ class VitalityScoreEngine:
 
         activity_dropped = drop_activity_frac >= w.activity_drop_threshold
 
-        # Weight loss from the monthly weight subsystem. Carried forward between
-        # weigh-ins and decayed once stale, so the score stays steady rather than
-        # spiking on whichever week the weight happened to be logged.
-        w_penalty = weight_penalty(self.weight_trend, current.timestamp)
+        # Weight change from the monthly weight subsystem - loss or gain, on the
+        # same ramp, so a move of the same size costs the same either way.
+        # Carried forward between weigh-ins and decayed once stale, so the score
+        # stays steady rather than spiking on whichever week the weight happened
+        # to be logged.
+        w_penalty = weight_penalty(
+            self.weight_trend,
+            current.timestamp,
+            cap=MAX_WEIGHT_PENALTY * w.weight_cap_multiplier,
+        )
         score -= w_penalty
 
         if drop_appetite >= 1:
@@ -219,7 +296,10 @@ class VitalityScoreEngine:
         if activity_dropped:
             drivers.append("activity below usual")
         if w_penalty > 0:
-            drivers.append("weight below usual")
+            # Name the direction. "weight below usual" on a pet who has gained
+            # would be worse than saying nothing at all.
+            gained = self.weight_trend is not None and self.weight_trend.direction == "gain"
+            drivers.append("weight above usual" if gained else "weight below usual")
 
         # Weight data quality. Neither of these is a wellbeing judgement - they
         # tell the owner what the score could not see, rather than passing

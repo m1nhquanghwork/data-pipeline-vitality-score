@@ -39,7 +39,7 @@ This layer tracks general, day-to-day wellness based on weekly check-ins.
 This is the system's built-in safety mechanism. It handles acute or serious medical signs separately so they don't get lost in the general math.
 * **Immediate Action:** If an owner logs a high-severity warning sign—such as blood in the stool or a sudden collapse in appetite combined with lethargy—this layer immediately takes over.
 * **Bypassing the Math:** It completely bypasses the 0-100 scoring system and immediately places the pet into the "Action Needed" zone, prompting the owner to contact a vet.
-* **Weight triggers:** Three of the safety rules come from the weight log. A **notable unintentional loss** (around 10% of body weight per four weeks) routes to urgent vet review on its own. **Weight loss alongside another sign** — reduced appetite, increased thirst, or low energy on the same check-in — is also urgent, because each of those signs normally needs to repeat before it escalates, so a first occurrence next to real weight loss would otherwise slip through. **Rapid weight gain** in an adult is advisory only: it prompts a look at portions and treats, and never reduces the score.
+* **Weight triggers:** Three of the safety rules come from the weight log. A **notable unintentional loss** (around 10% of body weight per four weeks) routes to urgent vet review on its own. **Weight loss alongside another sign** — reduced appetite, increased thirst, or low energy on the same check-in — is also urgent, because each of those signs normally needs to repeat before it escalates, so a first occurrence next to real weight loss would otherwise slip through. **Rapid weight gain** in an adult (8% or more per four weeks) prompts a look at portions and treats. It is the advisory half of a response the score shares: gain is deducted on the same ramp as loss, so the number moves too.
 
 ### Layer 3: Clear, Cautious Explanations
 PawHealthAI ensures that pet owners are never left guessing.
@@ -50,7 +50,7 @@ PawHealthAI ensures that pet owners are never left guessing.
 
 ## How Weight Affects the Score
 
-Weight is the one indicator recorded monthly while everything else is weekly, so it cannot be dropped into the math the same way. The rule the engine follows throughout is that **weight is a safety and context signal first, and a scoring term second** — it can lower a score, it can never raise one, and body size on its own is never a deduction.
+Weight is the one indicator recorded monthly while everything else is weekly, so it cannot be dropped into the math the same way. The rule the engine follows throughout is that **weight is a safety and context signal first, and a scoring term second** — it can lower a score, it can never raise one, and body size on its own is never a deduction. A *change* in weight does deduct, and it does so **symmetrically**: putting on 5% of body weight in a month costs exactly what taking it off costs. Working in percentages rather than kilos is what makes that fair across sizes — 5 kg off a beagle is a collapse, 5 kg off a Great Dane is a fortnight of wet weather.
 
 ### 1. Screening the reading
 Before any math runs, a recorded weight is checked:
@@ -67,16 +67,30 @@ The baseline is the **median** of up to the last four readings, not the average.
 ### 3. Measuring the change
 The change is expressed as a percentage of the baseline, then normalised to a **percent-per-four-weeks rate** so readings taken at irregular intervals stay comparable. The rate is measured against the most recent previous reading that is at least two weeks old — comparing today against a weigh-in from three days ago would turn ordinary scale-to-scale variation into an apparent collapse.
 
-| Rate of loss | What it means |
+| Rate of change | What it means |
 | --- | --- |
 | Under 2% per 4 weeks | Noise — hydration, a full bladder, a wet coat, different scales |
-| 2–5% | Counts against the score, gently |
-| 5% or more | Counts as a declining indicator in the signal-vs-noise tally |
-| Around 10% | The safety net takes over and routes to vet review |
-| Gain of 8% or more in an adult | Advisory prompt only, no score change |
+| 2–5%, either direction | Counts against the score, gently |
+| 5% or more **lost** | Also counts as a declining indicator in the signal-vs-noise tally |
+| Around 10% **lost** | The safety net takes over and routes to urgent vet review |
+| 8% or more **gained** in an adult | Adds an advisory prompt on top of the deduction |
+
+Only a *loss* joins the signal-vs-noise tally. Gain deducts, but it is not a declining
+indicator — letting it in would have a gain read as corroborating a fall in appetite it
+has nothing to do with.
 
 ### 4. Turning it into points
-Between 2% and 10% the deduction ramps smoothly from **0 to 15 points**. It stops at 15 because past that point the Red Flag Engine has taken over anyway, and a score is no longer what the owner needs to see.
+Between 2% and 10% the deduction ramps smoothly from **0 to 15 points**, in either direction. It stops at 15 because past that point the Red Flag Engine has taken over anyway, and a score is no longer what the owner needs to see. (15 is the ceiling for a pet inside their breed range; for one outside it the ceiling is higher — see "Body condition, not body size" below.)
+
+| Change per 4 weeks | Points removed |
+| --- | :---: |
+| 2% or less | 0 |
+| 3% | −1.88 |
+| 5% | −5.63 |
+| 8% | −11.25 |
+| 10% or more | −15.00 (capped) |
+
+The driver named for the owner follows the direction the pet actually moved — "weight below usual" for a loss, "weight above usual" for a gain. Telling the owner of a pet who has gained that their weight is below usual would be worse than saying nothing.
 
 **Worked example — Scout, a 6-year-old Labrador.** Weighed on three check-ins across two months: 32.0 kg, then 30.6 kg, then 29.4 kg.
 
@@ -87,8 +101,8 @@ Between 2% and 10% the deduction ramps smoothly from **0 to 15 points**. It stop
 
 The score is still reassuring, which is right: a 6% loss is worth mentioning, not worth alarming anyone about. Had the same loss appeared alongside reduced appetite, the Red Flag Engine would have escalated it instead.
 
-### 5. Weekly, but optional
-Weight is recorded whenever the owner gets to it, and the score has to stay steady in between. Two rules make that work:
+### 5. Monthly, and optional
+Weight is recorded whenever the owner gets to it — roughly monthly, against weekly check-ins — and the score has to stay steady in between. Two rules make that work:
 
 * **Carry-forward.** A check-in with no weight adds no new reading; the last trend keeps applying unchanged. Weighed in week 4 and then not again, Scout's score holds flat from week 5 through week 12 — the deduction does not spike on whichever week the scales came out.
 * **Decay.** The deduction applies in full for eight weeks, then fades to nothing by twelve. An old reading cannot penalise a pet indefinitely.
@@ -98,25 +112,34 @@ What is carried forward is the **trend**, never the reading itself. Copying the 
 ### 6. Body condition, not body size
 Separately from the trend, the engine compares the pet against a **healthy adult weight range for their breed**, held per breed and per sex. These come from published breed standards rather than population averages, and the distinction matters: body-condition surveys of UK dogs have put 56–65% of them in the overweight range [5], so a table built from what pets *do* weigh would read a healthy dog as underweight. Overweight risk also varies sharply by breed [6], which is why the reference is held per breed rather than per species.
 
-Being above or below that range **never deducts points**. It shifts emphasis:
+Being above or below that range **never deducts points**. It does two other things.
+
+**It shifts emphasis between the four indicators:**
 
 * **Above the range** — activity is weighted more heavily, and the drop that counts as "activity below usual" tightens from a 25% fall to 20%.
 * **Below the range** — appetite is weighted more heavily, since intake rather than exercise is the lever that matters.
 
 The four indicator weights are always rescaled back to a total of 100% afterwards, so this re-prioritises what matters for that pet rather than simply making the score harsher.
 
+**It sets how much a weight *change* can cost.** A pet already outside their healthy range has more at stake in a weight move than one sitting comfortably inside it, so the same change costs them more: the 15-point ceiling rises to 18 for a pet above their reference, and to 19.5 for one well above or below it. Only the ceiling moves — the percentages at which the deduction starts (2% per four weeks) and tops out (10%) are the same for every pet, so nobody's red-flag thresholds shift.
+
+That ceiling is deliberately kept separate from the four indicator weights rather than being folded in as a fifth. Those four split how much a *behavioural* change can cost; the weight ramp is added on top. Folding it in would have raised weight's importance by lowering everything else, which is a different claim from the one intended.
+
+**Which way the weight is moving leans the emphasis further.** A pet above their range who is *still gaining*, or below it and *still losing*, is moving away from where they should be, so the indicator that is the owner's lever counts for half again as much. A pet moving back towards their range keeps the ordinary emphasis — the situation is resolving, and there is no case for leaning harder on an owner who is already fixing it. Like the deduction itself, this fades out as the reading ages: a weight that has gone stale stops steering which indicators matter.
+
 The table only covers recognised breeds and only applies to adults; crossbreeds and growing animals return "no reference" and are scored without it. A vet-recorded body condition score (the 9-point WSAVA scale) is the proper clinical reference and should override the table wherever one exists.
 
-### 7. When weight loss is the goal
-Two situations suppress the alarms:
+### 7. When the change is the point
+Three situations suppress the deduction and the alarms, because in each of them the number moving is the outcome the pet is meant to be having:
 
 * **A recorded weight-management plan.** An owner deliberately slimming their pet should not be alerted for succeeding. Escalation is suppressed while the loss stays within a safe rate — about 8% per four weeks for a dog, 4% for a cat. Faster than that escalates anyway, plan or not.
 * **A growing puppy or kitten.** Gain is expected, so the gain rules switch off entirely until the breed's adult age. The loss thresholds tighten instead, because a growing animal *losing* weight matters more, not less.
+* **A pet still below their breed range, regaining.** Coming back up towards a healthy range is the problem resolving, not a new one. Deducting there would take points off a pet for getting better, and would fall hardest on the pets that had the furthest to come back. The advisory is suppressed with it — telling the owner of an underweight pet to review portions and treats would be worse advice than none, and the score and the safety net must not disagree about whether the gain is a problem.
 
 ### 8. Confidence
 Weight can move the score by real points, so the engine lowers its stated confidence when the weight signal cannot be trusted — a rejected entry, or a reading that has aged past eight weeks. A pet who has simply never been weighed is left alone: with no weight at all the score behaves exactly as it did before weight existed, and claiming reduced confidence would be false precision.
 
-> **Every threshold on this page is a provisional engineering placeholder pending veterinary review**, in line with the rest of the v0.2 engine. The percentages, the 15-point cap, the eight- and twelve-week decay window and the breed table are all tuning constants, not clinical findings.
+> **Every threshold on this page is a provisional engineering placeholder pending veterinary review**, in line with the rest of the v0.2 engine. The percentages, the 15-point cap and the multipliers that raise it, the eight- and twelve-week decay window and the breed table are all tuning constants, not clinical findings.
 
 ## The Health Zones
 The score is visualized on a circular meter broken down into four color-coded zones:
