@@ -8,7 +8,7 @@ Owner: Minh · Reviewer: PawHealthAI Product & Engineering Lead
 
 ## 1. Purpose
 
-Upgrade the early notebook prototype into a **validation-ready, rules-based scoring
+Upgrade the early prototype into a **validation-ready, rules-based scoring
 engine and test harness** built on synthetic data. The priority for v0.2 is **safety,
 explainability and testability** - not machine learning and not clinical accuracy.
 
@@ -21,11 +21,10 @@ their pet is healthy or sick.
 | File | Description |
 |------|-------------|
 | `phavit/` | Importable engine package: `models`, `weight`, `red_flags`, `scoring`, `pipeline`, `__init__` (see §3). |
-| `test_case/test_phavit.py` | Product-state, weight and safety test suite (pytest or standalone). **92 tests.** |
-| `test_case/*.json` | **30 check-in fixtures**, each declaring its own expected band, tier and weight outcome. Ten are weight scenarios (`Weight_*.json`). |
+| `test_case/test_phavit.py` | Product-state, weight and safety test suite (pytest or standalone). **107 tests.** |
+| `test_case/*.json` | **31 check-in fixtures**, each declaring its own expected band, tier and weight outcome. Eleven are weight scenarios (`Weight_*.json`). |
 | `test_case/README.md` | How to run the suite and how to add to it, for engineers and reviewers. |
 | `conftest.py` / `test_case/conftest.py` | Put the repo root on `sys.path` so the tests resolve `phavit` from either directory. |
-| `data_pipeline_vitality_score_v2.ipynb` | Runnable notebook: engine walkthrough plus the fixture loader. |
 | `PawHealthAI_Vitality_Score.md` | Product-level overview of the Vitality Score. |
 | `vitality_score_engine_v0_2_report.md` / `.docx` | This report (Markdown source and exported Word copy). |
 
@@ -34,7 +33,7 @@ package; it remains in the repo for reference only.*
 
 ## 3. Architecture
 
-The engine ships as an importable package rather than notebook-only code, so it
+The engine ships as an importable package rather than one-off script code, so it
 can be called from the weekly check-in flow, unit-tested and later persisted:
 
 - `phavit/models.py` - typed dataclasses (`PetProfile`, `CheckInData`, `BaselineSummary`, `WeightReading`, `WeightTrendResult`, `RedFlagResult`, `VitalityScoreResult`).
@@ -78,10 +77,12 @@ number:
   instead of dropping on whichever week a weight happened to be entered.
 - **Staleness decay.** The weight's effect holds at full strength for 8 weeks, then fades
   linearly to nothing at 12 weeks. An old loss cannot penalise a pet forever.
-- **Rate normalisation.** Everything is expressed as *percent of body weight lost per
+- **Rate normalisation.** Everything is expressed as *percent of body weight changed per
   4 weeks*, so readings taken at irregular intervals are comparable. A 3% drop over one
   week and a 3% drop over two months are very different events, and this is what tells
-  them apart.
+  them apart. Working in percent rather than kilos also makes a fixed weight mean what it
+  should for the animal carrying it: 5 kg off a beagle is a collapse, 5 kg off a Great
+  Dane is a fortnight of wet weather.
 
 Weights reach the engine by either of two paths. If the product stores a weight log, the
 trend is computed once at weigh-in and passed into `process_checkin()`. If it does not,
@@ -98,11 +99,21 @@ engine says so and asks the owner to re-check it, rather than quietly scoring an
 weight. The comparison baseline is the **median** of up to four previous readings, not
 the mean, so one bad entry cannot drag it.
 
-Two things are deliberately suppressed. A pet still **growing** (younger than its breed's
-adult age) has its gain rules switched off entirely, and its loss thresholds tightened,
-because a growing animal losing weight matters more. A pet on a recorded
+Loss and gain are scored **symmetrically**: both run up the same ramp, so a change of the
+same size costs the same points whichever way the pet moved. What differs is the
+escalation each direction reaches at the top of that ramp - a loss routes to urgent vet
+review, a gain to a monitor advisory - and the suppressions that apply on the way.
+
+Three things are deliberately suppressed. A pet still **growing** (younger than its
+breed's adult age) has its gain rules switched off entirely, and its loss thresholds
+tightened, because a growing animal losing weight matters more. A pet on a recorded
 **weight-management plan** is not penalised for losing weight at a safe rate - up to
-8%/4 weeks for a dog, 4% for a cat. Loss faster than that escalates regardless of the plan.
+8%/4 weeks for a dog, 4% for a cat; loss faster than that escalates regardless of the
+plan. And a pet already **below their breed reference** is not penalised for gaining,
+because that is the problem resolving rather than a new one - deducting there would take
+points off a pet for getting better, and would fall hardest on the pets that had the
+furthest to come back. The same suppression removes the monitor advisory, so the score and
+the safety net cannot disagree about whether the gain is a problem.
 
 ### Layer 1 - Wellbeing score (baseline comparison)
 
@@ -114,7 +125,8 @@ because a growing animal losing weight matters more. A pet on a recorded
   activity more heavily (0.45 vs 0.20).
 - **Body-aware weighting**: where a pet sits against its breed weight reference shifts
   emphasis between indicators. See "Weighting profiles" below.
-- **Unusual weight deducts points directly**, on a ramp, and fades as the reading ages.
+- **Weight change deducts points directly**, on a ramp whose height the weighting
+  profile sets, and fades as the reading ages.
 - **Signal vs noise**: a single one-day dip is treated as noise; **multiple indicators
   declining together** add an extra penalty, and weight counts towards that tally.
 - **Honest uncertainty**: with fewer than 4 recent check-ins the engine returns a
@@ -142,14 +154,12 @@ pets.
 3. **Decide how much each drop matters.** Each indicator has a weight - its share of
    importance. The four weights always add up to 1.0, so they split a single fixed budget
    between them.
-4. **Convert drops into points lost.** Multiply each weighted drop by 60, the constant
-   that sets how harsh the engine is overall. A one-point appetite drop for a normal-breed
-   dog costs 0.30 × 60 = **18 points**.
-5. **Subtract for weight radical change.** If a recent weigh-in shows the pet unusual 
-   body weight different, subtract points on a sliding scale: nothing below 2% per 4 weeks, rising steadily to a maximum of 15 points at 10% per 4 weeks. Past 10% the safety net takes over instead, so the deduction stops growing.
-6. **Add a penalty when several things slip at once.** One indicator dipping is usually
-   noise. Two or more at the same time is a pattern, and costs a further 12 points.
-   Weight counts as one of those indicators - but a *fractional* one, contributing less as the weigh-in ages, so a fading signal tapers off instead of vanishing overnight.
+4. **Convert drops into points lost.** Multiply each weighted drop by 60, the
+   constant that sets how harsh the engine is overall. A one-point appetite drop for a normal-breed dog costs 0.30 × 60 = **18 points**.
+5. **Subtract for a large weight change.** If a recent weigh-in shows the pet's body
+   weight moving sharply in either direction, subtract points on a sliding scale: nothing below 2% per 4 weeks, rising steadily to a maximum at 10% per 4 weeks. That maximum is **15 points** for a pet inside their breed reference range, and **18** or **19.5** for one outside it - see "Weighting profiles" in section 3. The ramp stops growing past 10% per 4 weeks. The safety net runs on its own separate thresholds, and for rapid gain (8%/4wk) and for a growing pet losing weight (7%/4wk) those start *earlier* than the top of the ramp, so the two can be rising together.
+6. **Add a penalty when several things slip at once.** One indicator dipping
+   is usually noise. Two or more at the same time is a pattern, and costs a further 12 points. Weight counts as one of those indicators - but a *fractional* one, contributing less as the weigh-in ages, so a fading signal tapers off instead of vanishing overnight.
 7. **Apply the care nudge.** Overdue worming removes a further 8 points.
 
 Round the result and clamp it to the 0-100 range. Bands (provisional):
@@ -169,7 +179,7 @@ Round the result and clamp it to the 0-100 range. Bands (provisional):
 | Worming | up to date | 0 | 44.5 |
 | **Final** | rounds to **44** - *Action Needed* | | **44** |
 
-Scout's individual signs are each mild, but three of them moved the same way at once, and that is what drops him two bands. This is the behaviour the engine is designed to produce no single reading is alarming, the combination is.
+Scout's individual signs are each mild, but three of them moved the same way at once, and that is what drops him two bands. This is the behaviour the engine is designed to produce: no single reading is alarming, the combination is.
 
 *(A note on that last step: 44.5 rounds to 44, not 45. Python rounds a value sitting
 exactly halfway to the nearest **even** number, so scores landing on a .5 boundary go down
@@ -187,24 +197,59 @@ push the total above 1.0, which makes the score uniformly harsher rather than si
 re-prioritising activity - a different, and worse, behaviour. A test asserts every profile
 sums to 1.0.
 
-| Profile | Appetite | Energy | Sleep | Activity | Activity "drop" starts at |
-|---------|:--------:|:------:|:-----:|:--------:|:-------------------------:|
-| Standard | 0.300 | 0.300 | 0.200 | 0.200 | 25% |
-| Standard, above reference | 0.286 | 0.286 | 0.190 | 0.238 | 20% |
-| Standard, well above reference | 0.273 | 0.273 | 0.182 | 0.273 | 20% |
-| Standard, below reference | 0.364 | 0.273 | 0.182 | 0.182 | 25% |
-| High-energy | 0.200 | 0.250 | 0.100 | 0.450 | 25% |
-| High-energy, above reference | 0.190 | 0.238 | 0.095 | 0.476 | 20% |
-| High-energy, well above reference | 0.182 | 0.227 | 0.091 | 0.500 | 20% |
-| High-energy, below reference | 0.273 | 0.227 | 0.091 | 0.409 | 25% |
+| Profile | Appetite | Energy | Sleep | Activity | Activity "drop" starts at | Weight ramp cap |
+|---------|:--------:|:------:|:-----:|:--------:|:-------------------------:|:---------------:|
+| Standard | 0.300 | 0.300 | 0.200 | 0.200 | 25% | 15.00 |
+| Standard, above reference | 0.286 | 0.286 | 0.190 | 0.238 | 20% | 18.00 |
+| Standard, above reference, *still gaining* | 0.279 | 0.279 | 0.186 | 0.256 | 20% | 18.00 |
+| Standard, well above reference | 0.273 | 0.273 | 0.182 | 0.273 | 20% | 19.50 |
+| Standard, well above reference, *still gaining* | 0.261 | 0.261 | 0.174 | 0.304 | 20% | 19.50 |
+| Standard, below reference | 0.364 | 0.273 | 0.182 | 0.182 | 25% | 19.50 |
+| Standard, below reference, *still losing* | 0.391 | 0.261 | 0.174 | 0.174 | 25% | 19.50 |
+| High-energy | 0.200 | 0.250 | 0.100 | 0.450 | 25% | 15.00 |
+| High-energy, above reference | 0.190 | 0.238 | 0.095 | 0.476 | 20% | 18.00 |
+| High-energy, above reference, *still gaining* | 0.186 | 0.233 | 0.093 | 0.488 | 20% | 18.00 |
+| High-energy, well above reference | 0.182 | 0.227 | 0.091 | 0.500 | 20% | 19.50 |
+| High-energy, well above reference, *still gaining* | 0.174 | 0.217 | 0.087 | 0.522 | 20% | 19.50 |
+| High-energy, below reference | 0.273 | 0.227 | 0.091 | 0.409 | 25% | 19.50 |
+| High-energy, below reference, *still losing* | 0.304 | 0.217 | 0.087 | 0.391 | 25% | 19.50 |
 
-The reasoning: for a pet carrying extra weight, sustained low activity is both more
-consequential and the lever an owner can actually pull, so activity is weighted up and the
-bar for calling it a "drop" is lowered from 25% to 20%. For a pet *below* their reference
-the lever is intake rather than exercise, so appetite is weighted up instead. Neither is a
-deduction in itself - being heavy or light never costs points directly, it only changes
-which changes matter most. Breeds not in the reference table, and all crossbreeds, return
-`no_reference` and use the unmodified base profile.
+Three separate things are happening in that table.
+
+**Where the pet sits shifts the emphasis.** For a pet carrying extra weight, sustained low
+activity is both more consequential and the lever an owner can actually pull, so activity
+is weighted up and the bar for calling it a "drop" is lowered from 25% to 20%. For a pet
+*below* their reference the lever is intake rather than exercise, so appetite is weighted
+up instead. Neither is a deduction in itself - being heavy or light never costs points
+directly, it only changes which changes matter most.
+
+**Where the pet sits also sets how tall the weight ramp is.** A pet already outside their
+healthy range has more at stake in a weight move than one sitting comfortably inside it,
+so the same 6%/4wk change costs them more: the `weight_cap_multiplier` scales
+`MAX_WEIGHT_PENALTY` from 15 to 18 or 19.5. It scales the ramp **only** - it never moves
+where the deduction starts (2%/4wk) or where it tops out (10%/4wk), so the multiplier
+leaves the red-flag boundaries untouched and changes only the number of points. Those
+boundaries do vary for other reasons - a growing pet's urgent loss line is tightened to
+7%/4wk - but never because of this multiplier.
+
+That cap is deliberately **not** a fifth member of the sum-to-1.0 budget. Those four split
+how much a *behavioural* change can cost; the weight ramp is a separate term added on top.
+Folding it in would have raised weight's importance by lowering the other four, which is a
+different claim from the one intended here.
+
+**Which way the weight is moving amplifies the emphasis.** A pet above (or well above)
+their range and still gaining, or below it and still losing, is moving *away* from where
+they should be,
+so the lever leans further - the base bump is multiplied by `ADVERSE_TREND_EMPHASIS` = 1.5
+and the profile renormalised again. The amplification is deliberately one-sided: a pet
+moving back towards their range keeps the base emphasis rather than a reduced one, because
+the situation is resolving and there is no case for leaning harder on an owner already
+fixing it - but nor is there one for easing off the indicator doing the fixing. It also
+expires with the reading: once the signal has decayed to nothing it stops steering which
+indicators matter, exactly as it stops deducting points.
+
+Breeds not in the reference table, and all crossbreeds, return `no_reference` and use the
+unmodified base profile with a cap multiplier of 1.0.
 
 #### Formal notation
 
@@ -221,17 +266,35 @@ $$(w_a^0,w_e^0,w_s^0,w_m^0)=\begin{cases}(0.30,0.30,0.20,0.20)&\text{standard}\\
 
 $$\beta_m=\begin{cases}0.05&\text{above reference}\\0.10&\text{well above reference}\\0&\text{otherwise}\end{cases}\qquad \beta_a=\begin{cases}0.10&\text{below reference}\\0&\text{otherwise}\end{cases}$$
 
-$$w_i=\frac{w_i^0+\beta_i}{\textstyle\sum_j (w_j^0+\beta_j)},\qquad \theta=\begin{cases}0.20&\beta_m>0\\0.25&\text{otherwise}\end{cases}$$
+The body-status bumps $\beta_a,\beta_m$ are scaled by $\lambda=1.5$ when the trend runs
+adverse to the pet's body status - above the reference and gaining, or below it and
+losing - and by $\lambda=1$ otherwise, including once the reading has gone fully stale.
+It covers *well* above reference too - the bump is active there as well:
 
-Let $r$ be the weight trend's rate in % of body weight lost per 4 weeks, and $\varphi$ the
-staleness factor at check-in date $t$, where $u$ is the age of the reading in weeks:
+$$\lambda=\begin{cases}1.5&(\text{above or well above reference}\land\text{gain})\vee(\text{below reference}\land\text{loss}),\ \varphi(t)>0\\1&\text{otherwise}\end{cases}$$
+
+$$w_i=\frac{w_i^0+\lambda\beta_i}{\textstyle\sum_j (w_j^0+\lambda\beta_j)},\qquad \theta=\begin{cases}0.20&\beta_m>0\\0.25&\text{otherwise}\end{cases}$$
+
+Let $r$ be the weight trend's **signed** rate in % of body weight per 4 weeks - positive
+for a loss, negative for a gain - and $\varphi$ the staleness factor at check-in date $t$,
+where $u$ is the age of the reading in weeks:
 
 $$\varphi(t)=\begin{cases}1&u\le 8\\[4pt] \dfrac{12-u}{4}&8<u<12\\[4pt] 0&u\ge 12\end{cases}$$
 
-The weight deduction $P_w$ and the fractional declining-strength $\sigma$ are both zero
-unless the trend is usable, downward and unmanaged:
+The deduction $P_w$ runs off $|r|$, so it is **symmetric in direction**: a gain and a loss
+of the same size cost the same points. The fractional declining-strength $\sigma$ is not
+symmetric - it uses signed $r$, because only a *fall* belongs in a tally of indicators
+declining together. Both are zero unless the trend is usable and unsuppressed:
 
-$$P_w=\min\!\Big(1,\tfrac{r-2}{8}\Big)\cdot 15\cdot\varphi(t)\ \ \text{for } r>2, \qquad \sigma=\varphi(t)\ \ \text{for } r\ge 5$$
+$$P_w=\min\!\Big(1,\tfrac{|r|-2}{8}\Big)\cdot 15\,\kappa\cdot\varphi(t)\ \ \text{for } |r|>2, \qquad \sigma=\varphi(t)\ \ \text{for } r\ge 5$$
+
+where $\kappa$ is the profile's weight-ramp cap multiplier - $1.2$ above the breed
+reference, $1.3$ well above or below it, and $1$ otherwise. Note $\kappa$ multiplies the
+height of the ramp, not its endpoints: the 2% floor and the 10% cap are the same for every
+pet.
+
+$P_w=0$ wherever the change is suppressed: a loss inside a recorded management plan, a
+gain while the pet is still growing, or a gain in a pet below their breed reference.
 
 With the deviation constant $D = 60$:
 
@@ -249,7 +312,8 @@ $$\text{score} = \max\!\big(0,\ \min(100,\ \operatorname{round}(S_3))\big)$$
 Note the two different weight thresholds. A loss deducts points from 2%/4wk upward
 ($P_w$), but only counts towards the compound tally from 5% ($\sigma$). Small losses
 should cost a little; only a *notable* loss should mark weight as one of several
-indicators declining together.
+indicators declining together. A gain deducts on the same 2% ramp but never enters the
+tally at any size.
 
 ### Layer 2 - Red-flag override (three tiers)
 
@@ -265,7 +329,13 @@ The three weight rules in detail:
 |---------|------|------------|-------|
 | `notable_weight_loss` | urgent | unmanaged loss ≥10%/4wk (≥7% while growing), reading not fully stale | Tier decided at weigh-in; freshness re-checked each week so a long-stale reading cannot keep firing |
 | `weight_loss_with_signs` | urgent | loss ≥5%/4wk **plus** appetite ≤2, increased thirst, or energy ≤2 on this check-in | Each companion sign needs *repetition* to escalate alone, so a first occurrence next to real weight loss would otherwise slip through |
-| `rapid_weight_gain` | monitor | gain ≥8%/4wk in an adult | Advisory only, never a score deduction. Suppressed entirely while the pet is growing |
+| `rapid_weight_gain` | monitor | gain ≥8%/4wk in an adult who is not below their breed reference | The advisory that accompanies the score deduction, which starts earlier (2%/4wk) and is applied by Layer 1. Suppressed while the pet is growing, or while they are below their reference range and regaining |
+
+All three rules are expressed as a **rate** - percent of body weight per 4 weeks - and
+that is the figure the tier is decided on. The message shown to the owner states both the
+observed change against the recent average and that rate, because the two differ whenever
+the gap between weigh-ins is not four weeks: a 6% drop measured a fortnight apart is a
+12%/4wk rate, and it is the rate that escalates.
 
 Red flags sit **outside** the 0-100 math. Acute signs trigger a safety pathway rather
 than merely lowering a number, so a serious sign can never be averaged away by otherwise
@@ -314,24 +384,22 @@ to know it reflects an expiring reading rather than a recovering pet.
 
 ## 5. Test harness & results
 
-**Scenario fixtures.** **30 JSON scenarios**, each declaring its expected band, override
+**Scenario fixtures.** **31 JSON scenarios**, each declaring its expected band, override
 tier and weight outcome **before** the engine runs. They are globbed automatically, so a
 new file needs no registration. Every one is asserted to load, run, stay non-diagnostic
-and match its own declared expectation. Current result: **30/30 match.**
+and match its own declared expectation. Current result: **31/31 match.**
 
 **Test suite (`test_case/test_phavit.py`).** Runs under pytest
 (`python -m pytest test_case/test_phavit.py`) or standalone
 (`python test_case/test_phavit.py`, no pytest required), exiting non-zero on failure.
-Current result: **92/92 pass in 0.15s.**
+Current result: **107/107 pass in 0.13s.**
 
 | Section | Tests | Covers |
 |---|:---:|---|
-| 1-8 | 12 | The eight product states: baseline building, fourth-check-in unlock, green bands, declining indicators, emergency and monitor overrides, breed weighting, malformed input |
-| *(fixture-wide)* | 2 | Every JSON loads, runs, stays non-diagnostic, matches its expectation |
-| 9-14 | 22 | Weight: inert without data, trend maths, data quality, monthly cadence, escalations and suppressions, profiles staying normalised |
+| 1-8 | 12 | The eight product states: baseline building, fourth-check-in unlock, green bands, declining indicators, emergency and monitor overrides, breed weighting, malformed input - plus the two fixture-wide checks (every JSON loads, runs, stays non-diagnostic and matches its own declared expectation) |
+| 9-14 | 37 | Weight: inert without data, trend maths, data quality, monthly cadence, escalations and suppressions, profiles staying normalised, the profile's ramp cap (14b), and trend direction amplifying the emphasis (14c) |
 | 15 | 20 | System analysis - boundaries, determinism, invariants |
-| 16 | 18 | Core engine coverage outside weight |
-| 17 | 20 | Weight arriving on the check-in stream, and the data-quality prompts |
+| 16 | 38 | Core engine coverage outside weight: the explanation layer, weight arriving on the check-in stream, and the data-quality prompts |
 
 The eight original product states remain individually asserted:
 
@@ -427,19 +495,43 @@ percentage of the baseline minutes.
 
 And the same view for **body weight**, which does not depend on the breed profile:
 
-| Weight loss (% per 4 weeks) | Points removed | Counts towards "several declining"? |
+| Weight change (% per 4 weeks) | Points removed | Counts towards "several declining"? |
 |---|:---:|:---:|
 | 2% or less | 0 | no |
 | 3% | −1.88 | no |
 | 4% | −3.75 | no |
-| 5% | −5.63 | **yes** |
-| 6% | −7.50 | yes |
-| 8% | −11.25 | yes |
-| 10% or more | −15.00 (capped) | yes - *and* triggers an urgent red flag |
+| 5% | −5.63 | **yes, if a loss** |
+| 6% | −7.50 | yes, if a loss |
+| 8% | −11.25 | yes, if a loss |
+| 10% or more | −15.00 (capped) | yes, if a loss |
 
-Weight **gain** never removes points at any size; the strongest response it can produce is
-a monitor-tier advisory. Deliberate loss under a recorded management plan removes no points
-at all, up to 8%/4wk for dogs and 4% for cats.
+Those figures are for a pet **inside** their breed reference range. The weighting profile
+scales the whole column by its `weight_cap_multiplier`: ×1.2 for a pet above their
+reference (cap −18.00) and ×1.3 for one well above or below it (cap −19.50). The
+percentages at which the ramp starts and tops out do not move, so the multiplier leaves
+the red-flag boundaries untouched - only the number of points differs. See "Weighting profiles"
+in section 3.
+
+The points column applies to a **loss or a gain of the same size**: the ramp is driven by
+the rate, not the direction, so 5% off and 5% on both cost 5.63 points. Because the rate
+is a percentage of the animal's own body weight, a fixed number of kilos means what it
+should - 5 kg off a beagle is a collapse, 5 kg off a Great Dane is a fortnight of wet
+weather.
+
+What the two directions do **not** share is what happens at the top of the ramp, and what
+switches them off:
+
+| | Loss | Gain |
+|---|---|---|
+| Deduction starts | 2%/4wk | 2%/4wk |
+| Full −15 at | 10%/4wk | 10%/4wk |
+| Escalation at the cap | **urgent** vet review | **monitor** advisory (from 8%) |
+| Joins the "several declining" tally | yes, from 5% | never |
+| Suppressed by | a recorded management plan (≤8%/4wk dogs, ≤4% cats) | still growing; or still below their breed reference |
+
+The last of those is the asymmetry worth defending in review: a pet below their reference
+range who is gaining is **recovering**, and deducting there would take points off a pet for
+getting better.
 
 Ageing of the signal, for a 10%/4wk loss:
 
@@ -487,9 +579,10 @@ softened, but a halving of activity is penalised far more heavily.
 1. **Thresholds.** Are 5% per 4 weeks ("notable") and 10% per 4 weeks ("urgent") the right
    lines for unintentional loss? Should they differ between dogs and cats, or by size
    class - 5% of a Chihuahua and 5% of a Great Dane are very different absolute amounts?
-2. **Maximum weight penalty.** Weight can remove at most 15 of 100 points, against 18 for
-   a single appetite point. Is weight loss under-weighted relative to the self-reported
-   indicators, given it is the only objectively measured signal in the system?
+2. **Maximum weight penalty.** Weight can remove 15 of 100 points for a pet inside their
+   breed range, rising to 19.5 for one outside it, against 18 for a single appetite point.
+   Is weight under-weighted relative to the self-reported indicators, given it is the only
+   objectively measured signal in the system?
 3. **Freshness window.** Is "full effect for 8 weeks, gone by 12" clinically sensible for a
    monthly weigh-in cadence, or should a real loss persist longer?
 4. **Noise floor.** Is 2% the right line below which a change is home-scale noise?
@@ -498,13 +591,28 @@ softened, but a halving of activity is penalised far more heavily.
 6. **Growth.** The engine gates growth on an age cut-off per breed and tightens loss
    thresholds by 30% while growing. Should it use published growth centile curves instead,
    and is 30% the right tightening?
-7. **Gain.** Rapid gain is advisory only and never deducts points. Is that right, or should
-   sustained gain affect the wellbeing score?
-8. **The breed table.** 19 breeds, assembled from breed standards, returning
+7. **The weight-ramp cap by body status.** A pet outside their healthy range has a taller
+   ramp - ×1.2 above reference, ×1.3 well above or below - so the same 6%/4wk change costs
+   them up to 19.5 points instead of 15. Is "already outside the range means more is at
+   stake" the right principle, and are 1.2 and 1.3 the right sizes? Should *below*
+   reference really carry the same multiplier as *well above*?
+8. **Adverse-direction emphasis.** When a pet is moving away from their healthy range
+   (above and gaining, below and losing) the relevant indicator's bump is multiplied by 1.5
+   before renormalising. The amplification is one-sided: a pet moving back towards range
+   keeps the base emphasis rather than a reduced one. Is that asymmetry right, or should a
+   pet visibly recovering have the emphasis eased off too?
+9. **Gain symmetry.** Gain and loss now cost the same points for the same percentage
+   change. Is that the right call clinically, or should a rapid gain count for less than a
+   rapid loss of the same size - and if so, at what ratio? (`URGENT_GAIN_PCT` is the single
+   dial: raising it above `URGENT_LOSS_PCT` flattens the gain ramp.) Relatedly: is
+   suppressing the gain deduction for a pet below their breed reference the right read of
+   recovery, or should there be a ceiling above which even a recovering pet is gaining too
+   fast?
+10. **The breed table.** 19 breeds, assembled from breed standards, returning
    `no_reference` for everything else including all crossbreeds. Is a breed weight range an
    acceptable stand-in for a body condition score at all, and should the product simply
    capture an owner-reported BCS instead?
-9. **The compound rule.** Weight contributes to the "several indicators declining" tally as
+11. **The compound rule.** Weight contributes to the "several indicators declining" tally as
    a *fraction* that decays with the reading's age. Is treating an objective measurement as
    equivalent to one self-reported indicator the right calibration, or should it count for
    more?

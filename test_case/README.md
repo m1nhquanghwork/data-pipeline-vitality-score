@@ -15,7 +15,7 @@ python -m pytest test_case/test_phavit.py -q
 ```
 
 ```
-92 passed in 0.16s
+107 passed in 0.44s
 ```
 
 **Without pytest installed.** The file has its own runner, so it works on a machine with nothing but Python:
@@ -50,12 +50,10 @@ You can run from the repo root or from inside `test_case/` — a `conftest.py` i
 
 | Section | Tests | Covers |
 | --- | --- | --- |
-| 1–8 | 12 | The eight product states from the actionable plan: baseline building, the fourth-check-in unlock, green bands, declining indicators, emergency and monitor overrides, breed weighting, malformed input |
-| *(fixture-wide)* | 2 | Every JSON loads, runs, stays non-diagnostic, and matches its own declared expectation |
-| 9–14 | 22 | The weight subsystem: inert without data, trend math, data quality, monthly cadence, escalations and suppressions, weighting profiles staying normalised |
+| 1–8 | 12 | The eight product states from the actionable plan: baseline building, the fourth-check-in unlock, green bands, declining indicators, emergency and monitor overrides, breed weighting, malformed input — plus the two fixture-wide checks (every JSON loads, runs, stays non-diagnostic, and matches its own declared expectation) |
+| 9–14 | 37 | The weight subsystem: inert without data, trend math, data quality, monthly cadence, escalations and suppressions, weighting profiles staying normalised, the profile's ramp cap (14b), and trend direction amplifying the emphasis (14c) |
 | 15 | 20 | System analysis — boundaries, determinism, invariants |
-| 16 | 18 | Core engine coverage outside weight |
-| 17 | 20 | Weight arriving on the check-in stream, and the data-quality prompts |
+| 16 | 38 | Core engine coverage outside weight: the explanation layer, weight arriving on the check-in stream, and the data-quality prompts |
 
 Two rules the whole suite enforces, worth knowing before you change anything:
 

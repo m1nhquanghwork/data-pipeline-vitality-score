@@ -86,7 +86,8 @@ class RedFlagEngine:
             return RedFlagResult(
                 True, "notable_weight_loss", "urgent",
                 f"Recorded weight is about {abs(wt.pct_change):.0f}% lower than the "
-                f"recent average (reading of {wt.as_of.strftime('%d %b %Y')})",
+                f"recent average - about {abs(wt.rate_per_4w):.0f}% per 4 weeks "
+                f"(reading of {wt.as_of.strftime('%d %b %Y')})",
                 "A drop in body weight of this size may need veterinary review, "
                 "especially if it was not expected.",
                 True,
@@ -181,7 +182,8 @@ class RedFlagEngine:
             return RedFlagResult(
                 True, "rapid_weight_gain", "monitor",
                 f"Recorded weight is about {abs(wt.pct_change):.0f}% higher than the "
-                f"recent average (reading of {wt.as_of.strftime('%d %b %Y')})",
+                f"recent average - about {abs(wt.rate_per_4w):.0f}% per 4 weeks "
+                f"(reading of {wt.as_of.strftime('%d %b %Y')})",
                 "Consider reviewing portions and treats, and seek veterinary advice "
                 "if the gain was unexpected.",
                 True,

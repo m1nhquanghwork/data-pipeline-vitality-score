@@ -439,8 +439,8 @@ def test_every_scenario_matches_its_declared_expectation():
     """
     Each fixture declares its expected outcome in the JSON itself, so a vet or
     product reviewer can read the scenario and its expectation without opening
-    any Python. The expectation is written BEFORE the engine runs, the same
-    discipline the notebook harness uses.
+    any Python. The expectation is written BEFORE the engine runs, so a fixture
+    can never be back-fitted to whatever the engine happens to output.
     """
     fixtures = sorted(TEST_DIR.glob("*.json"))
     for path in fixtures:
