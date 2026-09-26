@@ -1,12 +1,11 @@
 {
-    "python.testing.unittestArgs": [
-        "-v",
-        "-s",
-        ".",
-        "-p",
-        "*test.py"
+    // The suite is pytest, not unittest, and lives in test_case/.
+    // The previous unittest config used pattern "*test.py", which matches no
+    // file in this repo, so the editor discovered zero tests.
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "test_case"
     ],
-    "python.testing.pytestEnabled": false,
-    "python.testing.unittestEnabled": true,
+    "python.testing.unittestEnabled": false,
     "claudeCode.useTerminal": true
 }

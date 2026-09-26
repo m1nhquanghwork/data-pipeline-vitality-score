@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phavit"
+version = "0.2.0"
+description = "PHAIVIT - a rules-based, non-diagnostic pet wellbeing scoring engine with a red-flag safety net"
+readme = "PawHealthAI_Vitality_Score.md"
+requires-python = ">=3.9"
+# The engine is deliberately pure standard library: it must be importable from a
+# check-in completion flow without dragging in a framework. Keep this empty.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools]
+packages = ["phavit"]
+
+[tool.pytest.ini_options]
+testpaths = ["test_case"]

@@ -28,8 +28,11 @@ their pet is healthy or sick.
 | `PawHealthAI_Vitality_Score.md` | Product-level overview of the Vitality Score. |
 | `vitality_score_engine_v0_2_report.md` / `.docx` | This report (Markdown source and exported Word copy). |
 
-*Legacy prototype `red_engine.py` predates v0.2 and is superseded by the `phavit/`
-package; it remains in the repo for reference only.*
+*Legacy prototype `red_engine.py` predated v0.2 and was superseded by the `phavit/`
+package. It was removed in the v0.2 cleanup: it imported a `dataclass_layout` module
+that does not exist, so it could not be imported at all, and it defined a second
+`RedFlagEngine` whose rules contradict the shipped one. It remains in git history
+(commit 78cc5b2) for reference.*
 
 ## 3. Architecture
 
